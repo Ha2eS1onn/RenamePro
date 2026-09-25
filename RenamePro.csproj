@@ -16,13 +16,31 @@
     <!-- 托盘图标：同时作为 exe 图标与嵌入资源（运行时由 TrayAppContext 加载） -->
     <EmbeddedResource Include="Assets\app.ico" LogicalName="RenamePro.Assets.app.ico" />
   </ItemGroup>
+  <Target Name="RemoveUnusedAssembliesFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
+    <!-- 体积优化：纯 WinForms 程序运行期不需要 WPF / 设计器 / 调试符号程序集，发布时剔除（约省 40MB） -->
+    <ItemGroup>
+      <PublishFileToRemove Include="@(ResolvedFileToPublish)"
+                           Condition="$([System.String]::Copy('%(Filename)').ToLowerInvariant()) == 'presentationcore'
+                                   or $([System.String]::Copy('%(Filename)').ToLowerInvariant()) == 'presentationframework'
+                                   or $([System.String]::Copy('%(Filename)').ToLowerInvariant()) == 'reachframework'
+                                   or $([System.String]::Copy('%(Filename)').ToLowerInvariant()) == 'system.printing'
+                                   or $([System.String]::Copy('%(Filename)').ToLowerInvariant()) == 'system.xaml'
+                                   or $([System.String]::Copy('%(Filename)').ToLowerInvariant()) == 'windowsformsintegration'
+                                   or $([System.String]::Copy('%(Filename)').ToLowerInvariant()) == 'system.windows.forms.design'
+                                   or $([System.String]::Copy('%(Filename)').ToLowerInvariant()) == 'system.design'
+                                   or $([System.String]::Copy('%(Filename)').ToLowerInvariant()) == 'd3dcompiler_47_cor3'
+                                   or $([System.String]::Copy('%(Filename)').ToLowerInvariant()) == 'microsoft.diasymreader.native.amd64'" />
+      <ResolvedFileToPublish Remove="@(PublishFileToRemove)" />
+    </ItemGroup>
+  </Target>
   <ItemGroup>
     <!-- 唯一允许的第三方 NuGet 包：图片格式转换 -->
     <PackageReference Include="Magick.NET-Q16-AnyCPU" Version="14.17.1" />
     <!-- FFmpeg 以 exe 形式放在程序目录（构建时复制到输出目录根，缺失时仅禁用音视频功能）；
          默认 glob 已把它们收进 None，这里用 Update 补充复制元数据；
-         TargetPath 用于把 ffmpeg\ 子目录拍平到输出根（None 复制默认保留相对目录） -->
-    <None Update="ffmpeg\ffmpeg.exe" CopyToOutputDirectory="PreserveNewest" TargetPath="ffmpeg.exe" />
-    <None Update="ffmpeg\ffprobe.exe" CopyToOutputDirectory="PreserveNewest" TargetPath="ffprobe.exe" />
+         TargetPath 用于把 ffmpeg\ 子目录拍平到输出根（None 复制默认保留相对目录）；
+         ExcludeFromSingleFile 保证单文件发布时 ffmpeg/ffprobe 仍留在程序目录（否则会被塞进 exe） -->
+    <None Update="ffmpeg\ffmpeg.exe" CopyToOutputDirectory="PreserveNewest" TargetPath="ffmpeg.exe" ExcludeFromSingleFile="true" />
+    <None Update="ffmpeg\ffprobe.exe" CopyToOutputDirectory="PreserveNewest" TargetPath="ffprobe.exe" ExcludeFromSingleFile="true" />
   </ItemGroup>
 </Project>

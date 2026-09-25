@@ -2,8 +2,9 @@
 bin/
 obj/
 
-# 发布产物（体积大，由 publish.ps1 生成）
+# 运行产物与打包分发目录（体积大，不入库）
 publish/
+dist/
 
 # VS 用户文件
 *.user
