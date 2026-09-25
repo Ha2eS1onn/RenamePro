@@ -13,8 +13,8 @@ public sealed class ConversionPipeline : IDisposable
     /// <summary>处理中路径表（防重入：同一路径处理期间的重复触发直接跳过）。</summary>
     private static readonly ConcurrentDictionary<string, byte> ProcessingPaths = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>分级调度队列（快速 2 / 图片 2 / 音视频 1）。</summary>
-    private readonly ConversionScheduler _scheduler = new();
+    /// <summary>分级调度队列（快速 2 / 图片 config.imageConcurrency / 音视频 1）。</summary>
+    private readonly ConversionScheduler _scheduler;
 
     /// <summary>内部操作抑制表（替换前登记，防本程序自己触发的改名被再次转换）。</summary>
     private readonly InternalOpsSet _internalOps;
@@ -41,7 +41,19 @@ public sealed class ConversionPipeline : IDisposable
     /// 创建转换主流程。
     /// </summary>
     /// <param name="internalOps">内部操作抑制表（与监听器共用同一实例）</param>
-    public ConversionPipeline(InternalOpsSet internalOps) => _internalOps = internalOps;
+    public ConversionPipeline(InternalOpsSet internalOps)
+    {
+        _internalOps = internalOps;
+        _scheduler = new ConversionScheduler(AppConfig.Current.ImageConcurrency);
+    }
+
+    /// <summary>
+    /// 应用新的图片队列并发度（“重新加载配置”调用）。
+    /// </summary>
+    /// <param name="imageConcurrency">新的图片队列并发度</param>
+    /// <returns>true = 即时生效；false = 队列忙，下次启动生效</returns>
+    public bool ApplyImageConcurrency(int imageConcurrency) =>
+        _scheduler.TryUpdateImageConcurrency(imageConcurrency);
 
     /// <summary>取消全部队列（进度对话框“取消”按钮调用）；取消后队列继续处理剩余任务。</summary>
     public void CancelAll() => _scheduler.CancelAll();
@@ -132,13 +144,16 @@ public sealed class ConversionPipeline : IDisposable
             return;
         }
         // FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS（0x400000）：云盘按需占位文件。
-        // 该位未收录进 .NET 的 FileAttributes 枚举，按原始属性位判断；
-        // skipCloudFiles 固定启用（里程碑 4 起由 config.json 提供）
+        // 该位未收录进 .NET 的 FileAttributes 枚举，按原始属性位判断；开关来自 config.skipCloudFiles
         const int recallOnDataAccessBit = 0x400000;
         if (((int)attributes & recallOnDataAccessBit) != 0)
         {
-            LogSkip(task, "云盘按需文件（RecallOnDataAccess）");
-            return;
+            if (AppConfig.Current.SkipCloudFiles)
+            {
+                LogSkip(task, "云盘按需文件（RecallOnDataAccess，skipCloudFiles=true）");
+                return;
+            }
+            Log.Info($"[处理] 云盘按需文件但 skipCloudFiles=false，继续转换 | {task.Description}");
         }
 
         // —— 统一前置校验：magic number 确认真实格式与源（旧）扩展名一致 ——
@@ -155,6 +170,13 @@ public sealed class ConversionPipeline : IDisposable
 
         if (PathRules.IsImageExtension(task.NewExt))
         {
+            // gifPolicy=skip：遇到 gif 改名直接忽略
+            if (task.OldExt == ".gif" && AppConfig.Current.GifMode == GifPolicyMode.Skip)
+            {
+                LogSkip(task, "配置 gifPolicy=skip，忽略 gif 改名");
+                return;
+            }
+
             // 图片：< 2MB 进快速通道，其余进图片队列
             var size = IoRetry.Run("读取文件长度", () => new FileInfo(task.NewPath).Length);
             lane = size < 2L * 1024 * 1024 ? ConversionLane.Fast : ConversionLane.Image;
@@ -239,10 +261,17 @@ public sealed class ConversionPipeline : IDisposable
         token.ThrowIfCancellationRequested();
         try
         {
-            // ① 备份先行：把改名后的新文件原样字节复制为“原格式副本”（此刻内容仍是旧格式，复制即备份）
-            backupPath = BackupManager.CreateBackup(task.NewPath, task.OldExt);
-            Log.Info($"[备份] {task.Description} | 副本: {backupPath}");
-            token.ThrowIfCancellationRequested();
+            // ① 备份先行（enableBackup=false 时跳过）：把改名后的新文件原样字节复制为“原格式副本”
+            if (AppConfig.Current.EnableBackup)
+            {
+                backupPath = BackupManager.CreateBackup(task.NewPath, task.OldExt);
+                Log.Info($"[备份] {task.Description} | 副本: {backupPath}");
+                token.ThrowIfCancellationRequested();
+            }
+            else
+            {
+                Log.Info($"[备份] 已按配置禁用备份（enableBackup=false） | {task.Description}");
+            }
 
             // ② 转换结果写入同目录临时文件（Guid 命名 + 新扩展名）
             tempPath = Path.Combine(Path.GetDirectoryName(task.NewPath)!,
@@ -285,6 +314,39 @@ public sealed class ConversionPipeline : IDisposable
             task.Result = ConversionResult.Failed;
             TryDelete(tempPath);
             Log.Error($"[结果] FAILED | 旧: {task.OldPath} | 新: {task.NewPath} | 副本: {backupPath} | 错误: {ex.Message}");
+            // autoRollbackOnFailure=true 时执行回滚（删目标文件 + 副本移回原名）
+            if (AppConfig.Current.AutoRollbackOnFailure) TryRollback(task, backupPath);
+        }
+    }
+
+    /// <summary>
+    /// 失败回滚：删除目标文件，并把副本 Move 回改名前的原名。
+    /// 关键：Move 前登记 InternalOpsSet（副本路径 + 原名路径），否则恢复的文件会被 watcher 当成用户改名再次转换。
+    /// </summary>
+    /// <param name="task">失败的任务</param>
+    /// <param name="backupPath">副本路径（可能为 null：禁用备份或无副本）</param>
+    private void TryRollback(ConversionTask task, string? backupPath)
+    {
+        if (string.IsNullOrEmpty(backupPath) || !File.Exists(backupPath))
+        {
+            Log.Warn($"[回滚] 跳过：没有可用副本 | 新: {task.NewPath}");
+            return;
+        }
+        try
+        {
+            // Move 前先登记抑制标记（watcher 回调首行会丢弃随之而来的改名事件）
+            _internalOps.Register(backupPath);
+            _internalOps.Register(task.OldPath);
+            IoRetry.Run("回滚：删除目标文件", () =>
+            {
+                if (File.Exists(task.NewPath)) File.Delete(task.NewPath);
+            });
+            IoRetry.Run("回滚：副本恢复原名", () => File.Move(backupPath, task.OldPath));
+            Log.Info($"[回滚] 已恢复原名：{task.OldPath}（副本 {backupPath} 已移回，不会再被二次转换）");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[回滚] 失败：{ex.Message} | 新: {task.NewPath} | 副本: {backupPath}（副本未删除，可手动恢复）");
         }
     }
 

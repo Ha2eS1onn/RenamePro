@@ -145,7 +145,8 @@ public sealed class ProgressCoordinator : IDisposable
             _pendingTasks.Add(task);
             _batchActive = true;
             _currentTask ??= task;
-            if (_degraded || _openScheduled || _dialog != null) return;
+            // showProgressDialog=false：完全不初始化 Shell COM（静默转换 + 完成 Toast）
+            if (!AppConfig.Current.ShowProgressDialog || _degraded || _openScheduled || _dialog != null) return;
             // 400ms 后仍未结束才显示：短任务静默完成，避免进度框闪烁
             _openScheduled = true;
             _openTimer ??= new System.Threading.Timer(_ => TryOpenDialog(), null, Timeout.Infinite, Timeout.Infinite);
@@ -331,11 +332,13 @@ public sealed class ProgressCoordinator : IDisposable
             _dispatcher?.BeginInvoke(CloseDialogOnStaThread);
             Log.Info($"[进度] 批次结束：共 {total} 个（成功 {succeeded} / 失败 {failed} / 跳过 {skipped} / 取消 {cancelled}）");
         }
-        else if (_degraded && total > 0)
+        else if (total <= 0)
         {
-            // 降级模式：静默转换完成后弹 Toast 汇总
-            ShowSummaryToast(total, succeeded, failed, skipped, cancelled);
+            return;
         }
+
+        // enableToast=true：每批任务完成后都弹 Toast 汇总（含降级模式与关闭进度框的场景）
+        if (AppConfig.Current.EnableToast) ShowSummaryToast(total, succeeded, failed, skipped, cancelled);
     }
 
     /// <summary>在 STA 线程上关闭并释放对话框。</summary>

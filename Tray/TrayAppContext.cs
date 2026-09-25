@@ -57,6 +57,9 @@ public sealed class TrayAppContext : ApplicationContext
     /// </summary>
     public TrayAppContext()
     {
+        // 先加载配置（首次运行生成带注释的 config.json）：watchDrives / imageConcurrency 等在构建组件时即生效
+        AppConfig.EnsureLoaded();
+
         // 图标来自嵌入资源（exe 自身图标也用同一文件）
         var stream = typeof(TrayAppContext).Assembly.GetManifestResourceStream("RenamePro.Assets.app.ico");
         if (stream != null)
@@ -77,6 +80,9 @@ public sealed class TrayAppContext : ApplicationContext
         _startupMenuItem = new ToolStripMenuItem("开机自启动") { CheckOnClick = true };
         _startupMenuItem.Click += (_, _) => ToggleStartup();
 
+        var reloadMenuItem = new ToolStripMenuItem("重新加载配置");
+        reloadMenuItem.Click += (_, _) => ReloadConfig();
+
         var exitMenuItem = new ToolStripMenuItem("退出");
         exitMenuItem.Click += (_, _) => ExitApplication();
 
@@ -86,6 +92,7 @@ public sealed class TrayAppContext : ApplicationContext
         menu.Items.Add(_pauseMenuItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_startupMenuItem);
+        menu.Items.Add(reloadMenuItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exitMenuItem);
 
@@ -194,6 +201,23 @@ public sealed class TrayAppContext : ApplicationContext
                 ? (enable ? "已注册开机自启动（任务计划程序）" : "已注销开机自启动（任务计划程序）")
                 : "切换开机自启动失败（用户取消 UAC 或权限不足）");
         });
+    }
+
+    /// <summary>
+    /// 重新加载 config.json 并即时应用（托盘菜单）：
+    /// 监听盘符重建、图片并发度（队列空闲时即时生效，否则下次启动）、其余项逐任务读取天然生效。
+    /// </summary>
+    private void ReloadConfig()
+    {
+        if (!AppConfig.Reload())
+        {
+            // 解析失败：保留现有配置（日志已记录具体原因）
+            return;
+        }
+        var config = AppConfig.Current;
+        _watcher.ApplyWatchDrives();
+        var concurrencyApplied = _pipeline.ApplyImageConcurrency(config.ImageConcurrency);
+        Log.Info($"[配置] 已重新加载：备份={(config.EnableBackup ? "开" : "关")}，失败回滚={(config.AutoRollbackOnFailure ? "开" : "关")}，Toast={(config.EnableToast ? "开" : "关")}，进度框={(config.ShowProgressDialog ? "开" : "关")}，图片质量={config.ImageQuality}，gif={(config.GifMode == GifPolicyMode.Skip ? "忽略" : "取首帧")}，图片并发={config.ImageConcurrency}{(concurrencyApplied ? "" : "（队列忙，下次启动生效）")}，监听盘={(config.WatchDrives.Count == 0 ? "全部固定磁盘" : string.Join(",", config.WatchDrives))}，跳过云盘占位={config.SkipCloudFiles}");
     }
 
     /// <summary>

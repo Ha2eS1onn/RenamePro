@@ -2,6 +2,9 @@
 bin/
 obj/
 
+# 发布产物（体积大，由 publish.ps1 生成）
+publish/
+
 # VS 用户文件
 *.user
 

@@ -96,14 +96,21 @@ public sealed class RenameWatcher : IDisposable
         Log.Info("[监听] 已恢复监听");
     }
 
-    /// <summary>为每个“已就绪的固定磁盘”创建一个 watcher 并启用。</summary>
+    /// <summary>为每个“已就绪且在监听列表内的固定磁盘”创建一个 watcher 并启用。</summary>
     private void StartAllWatchers()
     {
+        var configuredDrives = AppConfig.Current.WatchDrives;
         foreach (var drive in DriveInfo.GetDrives())
         {
             // 仅监听固定磁盘（U 盘 / 移动硬盘等可移动磁盘不监听）
             if (drive.DriveType != DriveType.Fixed || !drive.IsReady) continue;
             var root = drive.RootDirectory.FullName;
+            // watchDrives 配置：空列表 = 全部固定磁盘；非空则只监听列出的盘符
+            if (!IsWatched(root, configuredDrives))
+            {
+                Log.Info($"[监听] 按配置跳过 {root}（不在 watchDrives 列表内）");
+                continue;
+            }
             try
             {
                 var watcher = new FileSystemWatcher(root)
@@ -124,6 +131,51 @@ public sealed class RenameWatcher : IDisposable
             {
                 Log.Error($"[监听] 监听 {root} 失败：{ex.Message}");
             }
+        }
+    }
+
+    /// <summary>
+    /// 按最新配置重建监听器（托盘“重新加载配置”调用，使 watchDrives 生效）。
+    /// </summary>
+    public void ApplyWatchDrives()
+    {
+        lock (_sync)
+        {
+            if (_disposed) return;
+            DisposeAllWatchers();
+            if (!_paused) StartAllWatchers();
+        }
+        Log.Info("[监听] 已按最新配置重建监听器");
+    }
+
+    /// <summary>判断盘符是否在监听列表内（列表为空 → 全部固定磁盘）。</summary>
+    /// <param name="root">盘根路径（如 D:\）</param>
+    /// <param name="configuredDrives">配置的盘符列表</param>
+    private static bool IsWatched(string root, List<string> configuredDrives)
+    {
+        if (configuredDrives == null || configuredDrives.Count == 0) return true;
+        var normalizedRoot = NormalizeRoot(root);
+        foreach (var drive in configuredDrives)
+        {
+            if (string.IsNullOrWhiteSpace(drive)) continue;
+            if (string.Equals(NormalizeRoot(drive), normalizedRoot, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>盘符归一化：取盘根（支持 "D"、"D:"、"D:\"、"D:\目录" 等写法）。</summary>
+    /// <param name="path">配置或系统给出的盘符/路径</param>
+    private static string NormalizeRoot(string path)
+    {
+        var trimmed = path.Trim();
+        try
+        {
+            var full = Path.GetFullPath(trimmed);
+            return Path.GetPathRoot(full) ?? full;
+        }
+        catch
+        {
+            return trimmed;
         }
     }
 

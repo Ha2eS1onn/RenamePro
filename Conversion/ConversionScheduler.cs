@@ -23,14 +23,47 @@ public sealed class ConversionScheduler : IDisposable
     /// <summary>快速通道并发度 2。</summary>
     private readonly SemaphoreSlim _fastLane = new(2);
 
-    /// <summary>图片通道并发度 2。</summary>
-    private readonly SemaphoreSlim _imageLane = new(2);
+    /// <summary>图片通道（并发度来自 config.imageConcurrency，队列空闲时可替换）。</summary>
+    private SemaphoreSlim _imageLane;
 
     /// <summary>音视频通道并发度 1（重编码单任务即可打满 CPU）。</summary>
     private readonly SemaphoreSlim _avLane = new(1);
 
-    /// <summary>取消全部队列用的同步锁。</summary>
+    /// <summary>取消全部队列用的同步锁（同时保护在飞计数与图片通道替换）。</summary>
     private readonly object _cancelLock = new();
+
+    /// <summary>在飞任务计数（含排队中），用于判断“队列是否空闲”。</summary>
+    private int _inFlight;
+
+    /// <summary>按配置创建调度队列。</summary>
+    /// <param name="imageConcurrency">图片队列并发度（1~8）</param>
+    public ConversionScheduler(int imageConcurrency)
+    {
+        _imageLane = new SemaphoreSlim(Math.Clamp(imageConcurrency, 1, 8));
+    }
+
+    /// <summary>在飞任务数（含排队中）。</summary>
+    public int InFlightCount
+    {
+        get { lock (_cancelLock) return _inFlight; }
+    }
+
+    /// <summary>
+    /// 队列空闲时按新并发度重建图片通道（供“重新加载配置”即时生效）。
+    /// </summary>
+    /// <param name="imageConcurrency">新的图片队列并发度</param>
+    /// <returns>成功返回 true；仍有任务在跑返回 false（下次启动生效）</returns>
+    public bool TryUpdateImageConcurrency(int imageConcurrency)
+    {
+        lock (_cancelLock)
+        {
+            if (_disposed || _inFlight > 0) return false;
+            var previous = _imageLane;
+            _imageLane = new SemaphoreSlim(Math.Clamp(imageConcurrency, 1, 8));
+            previous.Dispose();
+            return true;
+        }
+    }
 
     /// <summary>“取消全部”令牌源；CancelAll 后换新，保证后续任务仍可继续。</summary>
     private CancellationTokenSource _cancelAll = new();
@@ -53,6 +86,7 @@ public sealed class ConversionScheduler : IDisposable
         {
             if (_disposed) throw new ObjectDisposedException(nameof(ConversionScheduler));
             linked = CancellationTokenSource.CreateLinkedTokenSource(taskToken, _cancelAll.Token);
+            _inFlight++; // 计入在飞任务（含排队中）
         }
 
         return Task.Run(async () =>
@@ -82,6 +116,7 @@ public sealed class ConversionScheduler : IDisposable
             finally
             {
                 linked.Dispose();
+                lock (_cancelLock) _inFlight--;
             }
         });
     }
