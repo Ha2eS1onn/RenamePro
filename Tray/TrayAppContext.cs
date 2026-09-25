@@ -29,6 +29,9 @@ public sealed class TrayAppContext : ApplicationContext
     /// <summary>托盘图标对象（退出时释放）。</summary>
     private readonly Icon _icon;
 
+    /// <summary>Shell 广播消息监听窗口（TaskbarCreated 重建图标 / 重复启动气泡提示）。</summary>
+    private readonly ShellMessageWindow _shellMessageWindow;
+
     /// <summary>是否已执行过退出流程（防止重复退出）。</summary>
     private bool _exited;
 
@@ -77,11 +80,35 @@ public sealed class TrayAppContext : ApplicationContext
             Visible = true,
         };
 
+        // 隐藏消息窗口：TaskbarCreated 广播 → 重建托盘图标；“已在运行”广播 → 气泡提示（均在 UI 线程执行）
+        _shellMessageWindow = new ShellMessageWindow(ReassertTrayIcon, ShowAlreadyRunningTip);
+
         Log.Info("程序已启动，托盘常驻");
         _watcher = new RenameWatcher(_internalOps);
 
         // 开机自启动：未注册则自动注册（幂等，可能弹一次 UAC，失败不影响监听）
         EnsureStartupRegistration();
+    }
+
+    /// <summary>
+    /// 强制重新注册托盘图标（收到 TaskbarCreated 广播时调用）：
+    /// 覆盖“登录早期通知区未就绪导致注册静默失败”与“Explorer 重启后图标丢失”两种场景。
+    /// </summary>
+    private void ReassertTrayIcon()
+    {
+        if (_exited) return;
+        // 先卸载再装载，强制 Shell_NotifyIcon 重新注册
+        _trayIcon.Visible = false;
+        _trayIcon.Visible = true;
+        Log.Info("[托盘] 通知区就绪（或 Explorer 重启），托盘图标已重建");
+    }
+
+    /// <summary>显示“已在后台运行”气泡提示（收到重复启动 exe 的广播时调用）。</summary>
+    private void ShowAlreadyRunningTip()
+    {
+        if (_exited) return;
+        _trayIcon.ShowBalloonTip(3000, "RenamePro", "程序已在后台运行（系统托盘）", ToolTipIcon.Info);
+        Log.Info("[托盘] 收到重复启动信号，已显示提示气泡");
     }
 
     /// <summary>切换“暂停监听 / 继续监听”。</summary>
@@ -139,6 +166,7 @@ public sealed class TrayAppContext : ApplicationContext
         Log.Info("程序退出");
         _watcher.Dispose();
         _internalOps.Dispose();
+        _shellMessageWindow.Dispose();
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
         _icon.Dispose();
