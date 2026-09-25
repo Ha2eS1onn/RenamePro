@@ -15,4 +15,13 @@
     <!-- 托盘图标：同时作为 exe 图标与嵌入资源（运行时由 TrayAppContext 加载） -->
     <EmbeddedResource Include="Assets\app.ico" LogicalName="RenamePro.Assets.app.ico" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- 唯一允许的第三方 NuGet 包：图片格式转换 -->
+    <PackageReference Include="Magick.NET-Q16-AnyCPU" Version="14.17.1" />
+    <!-- FFmpeg 以 exe 形式放在程序目录（构建时复制到输出目录根，缺失时仅禁用音视频功能）；
+         默认 glob 已把它们收进 None，这里用 Update 补充复制元数据；
+         TargetPath 用于把 ffmpeg\ 子目录拍平到输出根（None 复制默认保留相对目录） -->
+    <None Update="ffmpeg\ffmpeg.exe" CopyToOutputDirectory="PreserveNewest" TargetPath="ffmpeg.exe" />
+    <None Update="ffmpeg\ffprobe.exe" CopyToOutputDirectory="PreserveNewest" TargetPath="ffprobe.exe" />
+  </ItemGroup>
 </Project>

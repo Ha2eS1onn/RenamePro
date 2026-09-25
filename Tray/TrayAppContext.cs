@@ -1,3 +1,4 @@
+using RenamePro.Conversion;
 using RenamePro.Core;
 using RenamePro.Watching;
 
@@ -22,6 +23,9 @@ public sealed class TrayAppContext : ApplicationContext
 
     /// <summary>文件改名监听器。</summary>
     private readonly RenameWatcher _watcher;
+
+    /// <summary>转换主流程（备份 + 转换 + 替换）。</summary>
+    private readonly ConversionPipeline _pipeline;
 
     /// <summary>图标资源流（Icon 不复制流数据，需保持到程序退出）。</summary>
     private readonly Stream _iconStream;
@@ -97,7 +101,8 @@ public sealed class TrayAppContext : ApplicationContext
         _flashTimer.Tick += (_, _) => OnFlashTick();
 
         Log.Info("程序已启动，托盘常驻");
-        _watcher = new RenameWatcher(_internalOps);
+        _pipeline = new ConversionPipeline(_internalOps);
+        _watcher = new RenameWatcher(_internalOps, _pipeline.Submit);
 
         // 开机自启动：未注册则自动注册（幂等，可能弹一次 UAC，失败不影响监听）
         EnsureStartupRegistration();
@@ -201,6 +206,7 @@ public sealed class TrayAppContext : ApplicationContext
         _exited = true;
         Log.Info("程序退出");
         _watcher.Dispose();
+        _pipeline.Dispose();
         _internalOps.Dispose();
         _shellMessageWindow.Dispose();
         _flashTimer.Dispose();

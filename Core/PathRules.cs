@@ -16,7 +16,9 @@ public static class PathRules
     /// <summary>音视频扩展名集合（归一化：小写、带前导点）。</summary>
     private static readonly HashSet<string> AudioVideoExtensions = new(StringComparer.Ordinal)
     {
-        ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".mp3", ".wav", ".flac", ".aac", ".ogg"
+        ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".mp3", ".wav", ".flac", ".aac", ".ogg",
+        // v2.0 放宽：补全规格容器矩阵所需的扩展名，使 ts/webm/flv/m4a 的改名可进入转换流程
+        ".ts", ".webm", ".flv", ".m4a"
     };
 
     /// <summary>任意盘符下都排除的目录名（按路径段匹配）。</summary>
@@ -55,6 +57,14 @@ public static class PathRules
     /// <returns>归一化后的扩展名</returns>
     public static string NormalizeExt(string? extension) =>
         string.IsNullOrEmpty(extension) ? string.Empty : extension.ToLowerInvariant();
+
+    /// <summary>判断扩展名（归一化后）是否属于图片集合。</summary>
+    /// <param name="ext">归一化扩展名</param>
+    public static bool IsImageExtension(string ext) => ImageExtensions.Contains(ext);
+
+    /// <summary>判断扩展名（归一化后）是否属于音视频集合。</summary>
+    /// <param name="ext">归一化扩展名</param>
+    public static bool IsAudioVideoExtension(string ext) => AudioVideoExtensions.Contains(ext);
 
     /// <summary>
     /// 判断路径是否位于排除目录内：

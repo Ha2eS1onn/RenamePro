@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using RenamePro.Core;
 
 namespace RenamePro.Watching;
 
@@ -61,6 +62,11 @@ public sealed class DebounceScheduler
         catch (OperationCanceledException)
         {
             // 被更新的改名取消——静默丢弃（只处理最后一次）
+        }
+        catch (Exception ex)
+        {
+            // 兜底：处理入口抛出的任何异常都不能让防抖任务无声消失
+            Log.Error($"[处理] 防抖任务异常 | 旧: {oldPath} | 新: {newPath} | 错误: {ex.Message}");
         }
         finally
         {

@@ -21,6 +21,9 @@ public sealed class RenameWatcher : IDisposable
     /// <summary>内部操作抑制表检查点（本程序自身引起的改名在此丢弃，防死循环）。</summary>
     private readonly InternalOpsSet _internalOps;
 
+    /// <summary>防抖到期后的处理入口（转换主流程）。</summary>
+    private readonly Action<string, string> _onProcess;
+
     /// <summary>300ms 防抖合并调度器。</summary>
     private readonly DebounceScheduler _debounce;
 
@@ -43,9 +46,11 @@ public sealed class RenameWatcher : IDisposable
     /// 创建监听器并立即开始监听所有固定磁盘。
     /// </summary>
     /// <param name="internalOps">内部操作抑制表</param>
-    public RenameWatcher(InternalOpsSet internalOps)
+    /// <param name="onProcess">防抖到期后的处理入口（转换主流程）</param>
+    public RenameWatcher(InternalOpsSet internalOps, Action<string, string> onProcess)
     {
         _internalOps = internalOps;
+        _onProcess = onProcess;
         _debounce = new DebounceScheduler(OnDebounceDue);
         lock (_sync)
         {
@@ -160,10 +165,11 @@ public sealed class RenameWatcher : IDisposable
         _debounce.Schedule(e.OldFullPath, e.FullPath);
     }
 
-    /// <summary>防抖到期后的处理入口。里程碑 1 仅输出日志；里程碑 2 在此接入备份 + 转换流程。</summary>
+    /// <summary>防抖到期后的处理入口：记日志后移交给转换主流程（备份 + 转换 + 替换）。</summary>
     private void OnDebounceDue(string oldPath, string newPath)
     {
         Log.Info($"[处理] 开始处理（防抖合并后） | 旧: {oldPath} | 新: {newPath}");
+        _onProcess(oldPath, newPath);
     }
 
     /// <summary>Error 回调：记录溢出时间窗口并按指数退避重建全部 watcher。</summary>
