@@ -32,6 +32,15 @@ public sealed class TrayAppContext : ApplicationContext
     /// <summary>Shell 广播消息监听窗口（TaskbarCreated 重建图标 / 重复启动气泡提示）。</summary>
     private readonly ShellMessageWindow _shellMessageWindow;
 
+    /// <summary>闪烁帧图标（系统共享图标，无需释放）：与正常图标差异明显，保证闪烁肉眼可见。</summary>
+    private readonly Icon _flashIcon = SystemIcons.Application;
+
+    /// <summary>托盘图标闪烁定时器（UI 线程，300ms 一拍；注意全限定名，避免与 System.Threading.Timer 混淆）。</summary>
+    private readonly System.Windows.Forms.Timer _flashTimer;
+
+    /// <summary>剩余闪烁节拍数，归零即停止闪烁并恢复正常图标。</summary>
+    private int _flashTicks;
+
     /// <summary>是否已执行过退出流程（防止重复退出）。</summary>
     private bool _exited;
 
@@ -83,6 +92,10 @@ public sealed class TrayAppContext : ApplicationContext
         // 隐藏消息窗口：TaskbarCreated 广播 → 重建托盘图标；“已在运行”广播 → 气泡提示（均在 UI 线程执行）
         _shellMessageWindow = new ShellMessageWindow(ReassertTrayIcon, ShowAlreadyRunningTip);
 
+        // 图标闪烁定时器：重复启动提示用，仅在提示期间启用
+        _flashTimer = new System.Windows.Forms.Timer { Interval = 300 };
+        _flashTimer.Tick += (_, _) => OnFlashTick();
+
         Log.Info("程序已启动，托盘常驻");
         _watcher = new RenameWatcher(_internalOps);
 
@@ -103,12 +116,35 @@ public sealed class TrayAppContext : ApplicationContext
         Log.Info("[托盘] 通知区就绪（或 Explorer 重启），托盘图标已重建");
     }
 
-    /// <summary>显示“已在后台运行”气泡提示（收到重复启动 exe 的广播时调用）。</summary>
+    /// <summary>
+    /// 显示“已在后台运行”提示：气泡提示（系统通知允许时弹出）+ 托盘图标闪烁（必定可见，不依赖系统通知设置）。
+    /// 收到重复启动 exe 的广播时调用。
+    /// </summary>
     private void ShowAlreadyRunningTip()
     {
         if (_exited) return;
+        // 气泡提示：受系统通知设置/专注助手/远程桌面影响可能被静默收起，故叠加图标闪烁
         _trayIcon.ShowBalloonTip(3000, "RenamePro", "程序已在后台运行（系统托盘）", ToolTipIcon.Info);
-        Log.Info("[托盘] 收到重复启动信号，已显示提示气泡");
+        // 托盘图标闪烁约 3 秒（8 拍 × 300ms）
+        _flashTicks = 8;
+        _flashTimer.Start();
+        Log.Info("[托盘] 收到重复启动信号，气泡提示 + 托盘图标闪烁");
+    }
+
+    /// <summary>闪烁节拍：交替切换图标形成闪烁，节拍归零后恢复正常图标。</summary>
+    private void OnFlashTick()
+    {
+        if (_exited) return;
+        _flashTicks--;
+        if (_flashTicks <= 0)
+        {
+            // 结束闪烁并恢复正常图标
+            _flashTimer.Stop();
+            _trayIcon.Icon = _icon;
+            return;
+        }
+        // 与当前图标取反：正常 ↔ 闪烁帧，每拍交替
+        _trayIcon.Icon = ReferenceEquals(_trayIcon.Icon, _icon) ? _flashIcon : _icon;
     }
 
     /// <summary>切换“暂停监听 / 继续监听”。</summary>
@@ -167,6 +203,7 @@ public sealed class TrayAppContext : ApplicationContext
         _watcher.Dispose();
         _internalOps.Dispose();
         _shellMessageWindow.Dispose();
+        _flashTimer.Dispose();
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
         _icon.Dispose();
