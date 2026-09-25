@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RenamePro — 改个后缀，就换了格式 · Rename the suffix, get the real format</title>
+<meta name="description" content="RenamePro 是 Windows 托盘工具：在资源管理器里改文件后缀时，后台自动把文件内容真正转换成新格式。Windows tray utility that truly converts file content when you rename an extension.">
+<meta property="og:title" content="RenamePro — Rename the suffix, get the real format.">
+<meta property="og:description" content="Windows 托盘工具：改后缀的同时，把文件内容真正转成新格式。">
+<meta property="og:type" content="website">
+<meta name="color-scheme" content="light dark">
+<script>document.documentElement.classList.add('js');</script>
+<style>
+/* ───────────────────────── design tokens ───────────────────────── */
+:root {
+  color-scheme: light;
+  --wall: #e9f2ee;
+  --paper: #fafaf3;
+  --ink: #22303e;
+  --muted: #52635e;
+  --line: #c6d6cc;
+  --green: #256b47;
+  --orange: #e4572e;
+  --soft-orange: #f7e5cc;
+  --button-ink: #fafaf3;
+  --art-mint: #c4e3ce;
+  --art-paper: #fffdf4;
+  --art-blue: #a2c8e8;
+  --art-yellow: #f5d37a;
+  --art-orange: #ee8955;
+  --art-pink: #e9b1bb;
+  --comic-beat: 3.2s;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --wall: #14232b; --paper: #1b2d34; --ink: #eef4eb; --muted: #b3c4bd;
+    --line: #3b5155; --green: #9bdbb2; --orange: #f28d66; --soft-orange: #3d342c;
+    --button-ink: #14232b;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --wall: #14232b; --paper: #1b2d34; --ink: #eef4eb; --muted: #b3c4bd;
+  --line: #3b5155; --green: #9bdbb2; --orange: #f28d66; --soft-orange: #3d342c;
+  --button-ink: #14232b;
+}
+
+/* ───────────────────────── base ───────────────────────── */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 30px; }
+body {
+  margin: 0;
+  background: var(--wall);
+  color: var(--ink);
+  font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+/* bilingual pairing: show only the active language */
+html[lang="en"] [lang="zh-CN"],
+html[lang="zh-CN"] [lang="en"] { display: none; }
+[hidden] { display: none !important; }
+::selection { background: var(--art-yellow); color: var(--ink); }
+a { color: inherit; text-underline-offset: 5px; text-decoration-thickness: 1px; }
+button, select { font: inherit; color: inherit; }
+button, select, summary { cursor: pointer; }
+button { background: none; }
+button, a, select, summary { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+:focus-visible { outline: 3px solid var(--orange); outline-offset: 5px; }
+h1, h2, h3, p { margin: 0; }
+h1, h2, h3 { text-wrap: balance; }
+h1, h2 { font-weight: 750; letter-spacing: -.055em; }
+p { text-wrap: pretty; }
+svg { display: block; }
+code { overflow-wrap: anywhere; font: .95em ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }
+.wrap { width: min(1200px, calc(100% - 96px)); margin-inline: auto; }
+.symbols { position: absolute; width: 0; height: 0; overflow: hidden; }
+.skip-link {
+  position: absolute; left: 20px; top: -80px; z-index: 5;
+  background: var(--ink); color: var(--paper); padding: 10px 20px; border-radius: 8px;
+}
+.skip-link:focus { top: 12px; }
+
+/* ───────────────────────── header ───────────────────────── */
+.site-header { min-height: 100px; display: flex; align-items: center; gap: 32px; border-bottom: 1px solid var(--line); }
+.brand { display: inline-flex; align-items: center; gap: 9px; font-size: 21px; font-weight: 750; letter-spacing: -.035em; text-decoration: none; }
+.brand svg { width: 28px; height: 28px; color: var(--green); }
+.site-header nav { display: flex; flex-wrap: wrap; column-gap: 25px; margin-left: auto; }
+.site-header nav a { display: inline-flex; align-items: center; min-height: 44px; font-size: 14px; font-weight: 600; text-decoration: none; }
+.site-header nav a:is(:hover, :focus-visible), .footer-links a:is(:hover, :focus-visible) { color: var(--green); }
+.preferences { display: flex; align-items: center; gap: 13px; border-left: 1px solid var(--line); padding-left: 24px; }
+.lang-picker { display: flex; align-items: center; gap: 2px; }
+.lang-picker button {
+  min-height: 44px; padding: 6px 9px; font-size: 12px; font-weight: 650;
+  border: 0; border-radius: 999px; color: var(--muted);
+}
+.lang-picker button[aria-pressed="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 2px 0 color-mix(in srgb, var(--line) 40%, transparent); }
+.theme-picker { display: flex; align-items: center; gap: 4px; }
+.theme-picker svg { width: 17px; height: 17px; color: var(--muted); }
+.theme-picker select {
+  min-height: 44px; max-width: 108px; border: 0; background: transparent;
+  font-size: 12px; padding: 4px;
+}
+.theme-picker option { color: var(--ink); background: var(--paper); }
+
+/* ───────────────────────── hero ───────────────────────── */
+.hero { display: grid; grid-template-columns: 1fr 1.08fr; align-items: center; gap: 18px; padding-block: 76px 77px; }
+.hero-copy { position: relative; z-index: 1; min-width: 0; padding-bottom: 9px; }
+.eyebrow {
+  display: flex; align-items: center; gap: 9px; color: var(--green);
+  font-size: 11px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase;
+}
+.status-dot {
+  width: 7px; height: 7px; flex: none; border-radius: 100%; background: var(--green);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 10%, transparent);
+}
+h1 { font-size: clamp(49px, 5.7vw, 76px); line-height: 1.06; margin-block: 22px 23px; }
+html[lang="zh-CN"] h1 { font-size: clamp(45px, 5.4vw, 72px); line-height: 1.24; letter-spacing: -.03em; }
+html[lang="zh-CN"] :is(h2, h3) { letter-spacing: -.025em; }
+.highlight { position: relative; white-space: nowrap; }
+.highlight::after {
+  content: ""; position: absolute; left: 1px; right: -2px; bottom: -5px; height: 6px;
+  background: var(--orange); border-radius: 50%; transform: rotate(-2deg);
+}
+.js .highlight::after { transform: rotate(-2deg) scaleX(0); transform-origin: left center; animation: draw-underline .7s .35s cubic-bezier(.2, .9, .3, 1) forwards; }
+@keyframes draw-underline { to { transform: rotate(-2deg) scaleX(1); } }
+.hero-description { font-size: 18px; line-height: 1.8; color: var(--muted); margin-bottom: 28px; }
+.hero-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 16px 24px; }
+.text-link { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 13px; font-weight: 650; }
+.text-link svg { width: 18px; height: 18px; }
+.text-link:is(:hover, :focus-visible) { color: var(--green); }
+.button {
+  display: inline-flex; justify-content: center; align-items: center; gap: 29px;
+  min-height: 54px; padding: 12px 25px; border: 2px solid var(--ink); border-radius: 999px;
+  text-decoration: none; font-size: 14px; font-weight: 700;
+  transition: transform .22s cubic-bezier(.2, .9, .3, 1.4), box-shadow .22s cubic-bezier(.2, .9, .3, 1.4);
+}
+.button svg { width: 22px; height: 22px; transition: transform .22s cubic-bezier(.2, .9, .3, 1.4); }
+.primary { background: var(--ink); color: var(--button-ink); box-shadow: 0 4px 0 color-mix(in srgb, var(--ink) 18%, transparent); }
+.button:not(:disabled):is(:hover, :focus-visible) { transform: translateY(-3px); box-shadow: 0 7px 0 color-mix(in srgb, var(--ink) 18%, transparent); }
+.button:not(:disabled):is(:hover, :focus-visible) svg { transform: translateY(3px); }
+.button:not(:disabled):active { transform: translateY(2px); box-shadow: 0 1px 0 color-mix(in srgb, var(--ink) 18%, transparent); }
+.hero-note { color: var(--muted); font-size: 12px; line-height: 1.7; margin-top: 18px; }
+.hero-scene { min-width: 0; }
+.hero-art { display: block; width: 100%; height: auto; }
+.scene-caption { display: flex; justify-content: center; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.scene-caption p { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.caption-line { flex: none; width: 23px; height: 1px; background: var(--orange); transform: rotate(-6deg); }
+
+/* ───────────────────────── how it works ───────────────────────── */
+.how-section { padding-block: 67px 63px; background: var(--paper); border-block: 1px solid var(--line); }
+.section-heading { text-align: center; }
+.section-heading .eyebrow { justify-content: center; }
+h2 { font-size: clamp(30px, 3.25vw, 42px); line-height: 1.2; margin-top: 12px; }
+.section-heading > p:last-child { color: var(--muted); margin-top: 16px; font-size: 15px; }
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 49px; margin: 42px 0 0; padding: 0; list-style: none; }
+.steps li { position: relative; }
+.steps li:not(:last-child)::after {
+  position: absolute; content: "↗"; top: 49px; right: -34px;
+  font-size: 27px; font-weight: 350; color: var(--muted); transform: rotate(28deg);
+}
+.step-art {
+  position: relative; display: block; width: 100%; height: 126px; padding: 0; border: 0;
+  border-radius: 12px; margin-bottom: 15px; overflow: hidden;
+}
+.step-art svg { width: 100%; height: 100%; }
+.step-number { font-size: 11px; font-weight: 700; letter-spacing: .1em; color: var(--green); margin-bottom: 8px; }
+.step-number span { color: var(--line); margin-left: 5px; }
+h3 { font-size: 21px; font-weight: 700; letter-spacing: -.03em; line-height: 1.35; }
+.steps li > p { margin-top: 12px; font-size: 14px; line-height: 1.75; color: var(--muted); }
+
+/* ───────────────────────── features ───────────────────────── */
+.features-section { padding-block: 72px 66px; }
+.features-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 42px; padding: 0; list-style: none; }
+.feature-card {
+  display: flex; flex-direction: column; align-items: flex-start;
+  padding: 28px; background: var(--paper); border: 1px solid var(--line); border-radius: 24px;
+  box-shadow: 0 4px 0 color-mix(in srgb, var(--line) 40%, transparent);
+}
+.feature-mark {
+  display: grid; place-items: center; width: 52px; height: 52px; margin-bottom: 18px;
+  border-radius: 16px; background: var(--wall);
+}
+.feature-mark svg { width: 30px; height: 30px; color: var(--green); }
+.feature-card h3 { font-size: 19px; }
+.feature-card > p { margin-top: 10px; color: var(--muted); font-size: 13px; line-height: 1.8; }
+
+/* ───────────────────────── formats ───────────────────────── */
+.formats-section { padding-block: 20px 66px; }
+.format-groups {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px;
+  margin-top: 38px; padding: 0; list-style: none;
+}
+.format-group {
+  padding: 26px 28px; background: var(--paper); border: 1px solid var(--line); border-radius: 24px;
+  box-shadow: 0 4px 0 color-mix(in srgb, var(--line) 40%, transparent);
+}
+.format-group h3 { font-size: 17px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.chip {
+  display: inline-flex; align-items: center; min-height: 32px; padding: 4px 13px;
+  background: var(--wall); border: 1px solid var(--line); border-radius: 999px;
+  font: 600 12px/1 ui-monospace, SFMono-Regular, Consolas, monospace; color: var(--ink);
+}
+.chip.accent { background: var(--soft-orange); border-color: color-mix(in srgb, var(--orange) 30%, var(--line)); color: var(--ink); }
+.format-group > p { margin-top: 15px; color: var(--muted); font-size: 12.5px; line-height: 1.8; }
+.formats-note { margin-top: 22px; color: var(--muted); font-size: 13px; line-height: 1.8; }
+
+/* ───────────────────────── quick start / guides ───────────────────────── */
+.start-section { padding-block: 45px 67px; }
+.guide-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 9px; margin: 28px 0; }
+.guide-links a {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 8px 18px;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 999px;
+  text-decoration: none; font-size: 13px; font-weight: 650;
+}
+.guide-links a:is(:hover, :focus-visible) { border-color: var(--green); color: var(--green); }
+.guide { margin-top: 15px; border: 1px solid var(--line); border-radius: 24px; background: var(--paper); }
+.guide > summary { padding: 24px 28px; border-radius: 24px; }
+.guide-number {
+  display: grid; place-items: center; flex: none; width: 39px; height: 39px;
+  border: 1px solid var(--line); border-radius: 13px;
+  font-size: 12px; font-weight: 750; color: var(--green);
+}
+.guide-heading { flex: 1; font-size: 21px; font-weight: 700; letter-spacing: -.03em; }
+.guide-heading small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; font-weight: 400; letter-spacing: 0; }
+.guide-body { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 38px; padding: 5px 30px 30px; }
+.guide-steps { margin: 0; padding-left: 25px; }
+.guide-steps > li { padding-left: 8px; margin-bottom: 23px; font-size: 14px; line-height: 1.8; }
+.guide-steps > li:last-child { margin-bottom: 0; }
+.guide-steps > li::marker { color: var(--green); font-size: 12px; font-weight: 750; }
+.guide-steps strong { font-weight: 700; }
+.guide-body p { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.85; }
+.guide-note {
+  align-self: start; min-width: 0; padding: 23px;
+  border: 1px solid var(--line); border-radius: 18px; background: var(--wall);
+}
+.guide-note h3 { font-size: 16px; }
+.guide-note p + p { margin-top: 15px; }
+.guide-note .button { margin-top: 22px; width: 100%; gap: 10px; padding: 12px 15px; border-width: 1.5px; min-height: 48px; font-size: 13px; }
+.guide-note .button svg { flex: none; width: 20px; height: 20px; }
+.config-list { margin: 4px 0 0; padding: 0; }
+.config-list div { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.config-list div:last-child { border-bottom: 0; }
+.config-list dt { font-size: 13px; font-weight: 700; }
+.config-list dd { margin: 3px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
+
+/* ───────────────────────── faq ───────────────────────── */
+.faq-section {
+  display: grid; grid-template-columns: 1fr 1.9fr; gap: 55px;
+  border-top: 1px solid var(--line); padding-block: 61px 71px;
+}
+.faq-intro h2 { margin-top: 15px; }
+.faq-mark { width: 76px; height: 76px; margin-top: 30px; transform: rotate(-7deg); color: var(--green); }
+.questions details { border-bottom: 1px solid var(--line); }
+.questions details:first-child { border-top: 1px solid var(--line); }
+summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 21px 0; font-size: 15px; font-weight: 650; list-style: none; }
+summary::-webkit-details-marker { display: none; }
+summary::after {
+  content: "+"; flex: none; width: 22px; font-size: 21px; font-weight: 400;
+  text-align: center; color: var(--green);
+}
+details[open] > summary::after { content: "−"; }
+details p { max-width: 610px; padding: 0 24px 23px 0; color: var(--muted); font-size: 14px; line-height: 1.85; }
+@media (prefers-reduced-motion: no-preference) {
+  details[open] p { animation: answer-appears .2s ease-out; }
+}
+@keyframes answer-appears { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+
+/* ───────────────────────── download ───────────────────────── */
+.download-section { padding-block: 76px 60px; }
+.release-note {
+  display: flex; justify-content: center; align-items: baseline; flex-wrap: wrap; gap: 8px 13px;
+  margin: 27px auto; color: var(--muted); font-size: 13px; text-align: center;
+}
+.download-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; max-width: 840px; margin-inline: auto; }
+.download-card {
+  display: flex; flex-direction: column; align-items: flex-start; padding: 28px;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 24px;
+  box-shadow: 0 4px 0 color-mix(in srgb, var(--line) 40%, transparent);
+}
+.download-card h3 { font-size: 25px; }
+.download-card > p { margin: 10px 0 23px; color: var(--muted); font-size: 13px; line-height: 1.8; }
+.download-button {
+  width: 100%; gap: 10px; padding: 12px 15px; border-width: 1.5px;
+  min-height: 48px; font-size: 13px;
+}
+.download-button svg { flex: none; width: 20px; height: 20px; }
+.download-card .download-button { margin-top: auto; }
+.download-card > a:not(.button) { display: inline-flex; align-items: center; min-height: 44px; margin-top: 8px; font-size: 12px; }
+.download-help { margin-top: 22px; text-align: center; }
+.download-help p { max-width: 760px; margin: 6px auto 0; color: var(--muted); font-size: 13px; }
+
+/* ───────────────────────── footer ───────────────────────── */
+.site-footer { display: flex; align-items: center; flex-wrap: wrap; column-gap: 20px; padding-block: 48px 29px; border-top: 1px solid var(--line); }
+.footer-identity { display: flex; align-items: center; gap: 8px; font-size: 21px; font-weight: 750; letter-spacing: -.035em; }
+.footer-identity svg { width: 28px; height: 28px; color: var(--green); }
+.footer-identity p { color: var(--muted); margin-left: 12px; font-size: 11px; font-weight: 400; letter-spacing: 0; }
+.footer-links { display: flex; flex-wrap: wrap; gap: 24px; margin-left: auto; font-size: 12px; }
+.footer-links a { display: inline-flex; align-items: center; min-height: 44px; text-decoration: none; }
+.display-settings { flex-basis: 100%; text-align: right; }
+.display-settings > summary { justify-content: flex-end; gap: 8px; min-height: 44px; padding: 0; font-size: 12px; font-weight: 400; }
+.display-settings > summary::after { content: none; }
+.display-settings label { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-height: 44px; font-size: 12px; }
+.display-settings input { accent-color: var(--green); width: 16px; height: 16px; margin: 0; }
+.footer-note { flex-basis: 100%; text-align: right; margin-top: 9px; color: var(--muted); font-size: 11px; }
+
+/* ───────────────────────── micro animations ───────────────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  .step-art g, .step-art [class] { transform-box: fill-box; transform-origin: center; }
+  .steps li:is(:hover, :focus-within) .s1-cursor { animation: cursor-moves var(--comic-beat) ease-in-out; }
+  .steps li:is(:hover, :focus-within) .s1-ext-old { animation: old-ext-out var(--comic-beat) ease-in-out; }
+  .steps li:is(:hover, :focus-within) .s1-ext-new { animation: new-ext-in var(--comic-beat) ease-in-out; }
+  .steps li:is(:hover, :focus-within) .s2-arrow { animation: convert-flies var(--comic-beat) ease-in-out; }
+  .steps li:is(:hover, :focus-within) .s2-gear { animation: gear-turns var(--comic-beat) ease-in-out; }
+  .steps li:is(:hover, :focus-within) .s3-fill { animation: bar-fills var(--comic-beat) ease-in-out; }
+  .steps li:is(:hover, :focus-within) .s3-check { animation: check-pops var(--comic-beat) ease-out; }
+  /* every scene ends back at its original pose */
+  .steps li:is(:hover, :focus-within) .step-art [class] { animation-fill-mode: both; }
+}
+@keyframes cursor-moves {
+  0%, 10%, 60%, 100% { transform: none; }
+  26% { transform: translate(-26px, -14px); }
+  32% { transform: translate(-26px, -14px) scale(.88); }
+  44% { transform: translate(-26px, -14px); }
+}
+@keyframes old-ext-out { 0%, 26%, 58%, 100% { opacity: 1; } 38%, 50% { opacity: 0; } }
+@keyframes new-ext-in { 0%, 34%, 62%, 100% { opacity: 0; } 44%, 56% { opacity: 1; } }
+@keyframes convert-flies {
+  0%, 8%, 62%, 100% { transform: none; opacity: 1; }
+  20% { transform: translate(6px, -3px) rotate(6deg); opacity: 1; }
+  42% { transform: translate(46px, -22px) rotate(-10deg); opacity: 0; }
+  43% { transform: translate(-30px, 18px); opacity: 0; }
+  58% { transform: none; opacity: 1; }
+}
+@keyframes gear-turns {
+  0%, 12%, 62%, 100% { transform: rotate(0deg); }
+  40% { transform: rotate(150deg); }
+}
+@keyframes bar-fills {
+  0%, 12%, 70%, 100% { transform: scaleX(.32); }
+  52% { transform: scaleX(1); }
+}
+@keyframes check-pops {
+  0%, 40% { transform: scale(.6); opacity: 0; }
+  56% { transform: scale(1.12); opacity: 1; }
+  66%, 100% { transform: scale(1); opacity: 1; }
+}
+
+/* scroll reveal (only when JS is on) */
+.js .reveal { opacity: 0; transform: translateY(16px); transition: opacity .6s ease, transform .6s cubic-bezier(.2, .9, .3, 1); }
+.js .reveal.is-visible { opacity: 1; transform: none; }
+.js .reveal:nth-child(2) { transition-delay: .07s; }
+.js .reveal:nth-child(3) { transition-delay: .14s; }
+.js .reveal:nth-child(4) { transition-delay: .21s; }
+.js .reveal:nth-child(5) { transition-delay: .28s; }
+.js .reveal:nth-child(6) { transition-delay: .35s; }
+
+/* ───────────────────────── responsive ───────────────────────── */
+@media (min-width: 1450px) { .hero { padding-block: 90px; } }
+@media (max-width: 1000px) {
+  .wrap { width: calc(100% - 56px); }
+  .site-header { gap: 23px; }
+  .site-header nav { gap: 20px; }
+  .preferences { padding-left: 18px; }
+  .hero { gap: 7px; padding-block: 59px 65px; }
+  h1 { font-size: 56px; }
+  .hero-description { font-size: 16px; }
+  .steps { gap: 30px; }
+  .steps li:not(:last-child)::after { right: -23px; }
+  h3 { font-size: 19px; }
+  .feature-card, .download-card { padding: 24px 20px; }
+  .features-grid { gap: 14px; }
+  .guide-body { gap: 24px; }
+  .faq-section { gap: 36px; }
+  .footer-identity p { display: none; }
+}
+@media (max-width: 740px) {
+  .wrap { width: calc(100% - 40px); }
+  .site-header { min-height: 83px; gap: 0 14px; flex-wrap: wrap; padding-top: 12px; }
+  .site-header nav { order: 3; flex-basis: 100%; justify-content: space-between; gap: 0 12px; }
+  .site-header nav a { font-size: 12px; }
+  .preferences { margin-left: auto; border-left: 0; padding-left: 0; gap: 10px; }
+  .theme-picker select { max-width: 82px; font-size: 11px; }
+  .hero { grid-template-columns: 1fr; gap: 0; padding-block: 44px 35px; }
+  .hero-copy { text-align: center; }
+  .hero .eyebrow { justify-content: center; font-size: 10px; }
+  h1 { margin-block: 22px; font-size: clamp(47px, 10.2vw, 68px); }
+  html[lang="zh-CN"] h1 { font-size: clamp(43px, 9.5vw, 64px); }
+  .hero-actions { justify-content: center; gap: 10px 22px; }
+  .hero-note { max-width: none; font-size: 11px; margin-top: 15px; }
+  .hero-scene { width: min(550px, 100%); margin: 24px auto 0; }
+  .scene-caption { font-size: 11px; margin-top: 8px; }
+  .how-section { padding-block: 45px; }
+  h2 { font-size: 30px; }
+  .section-heading .eyebrow { font-size: 10px; }
+  .steps { grid-template-columns: 1fr; gap: 30px; max-width: 500px; margin: 36px auto 0; }
+  .steps li { display: grid; grid-template-columns: 128px 1fr; grid-template-rows: auto auto 1fr; column-gap: 15px; }
+  .step-art { height: auto; grid-row: 1 / 4; margin: 0; display: flex; align-items: center; }
+  .step-art svg { height: auto; }
+  .step-number { margin-bottom: 5px; }
+  .steps h3 { font-size: 18px; }
+  .steps li > p { margin-top: 7px; font-size: 13px; }
+  .steps li:not(:last-child)::after { content: none; }
+  .features-section { padding-block: 48px; }
+  .features-grid, .format-groups { grid-template-columns: 1fr; max-width: 500px; margin-inline: auto; gap: 15px; }
+  .features-grid { margin-top: 32px; }
+  .formats-section { padding-bottom: 48px; }
+  .start-section { padding-block: 12px 48px; }
+  .guide > summary { padding: 20px 18px; gap: 12px; }
+  .guide-heading { font-size: 18px; }
+  .guide-number { width: 32px; height: 32px; border-radius: 10px; }
+  .guide-body { grid-template-columns: 1fr; padding: 0 20px 22px; gap: 20px; }
+  .guide-note { padding: 18px; }
+  .guide-links { gap: 8px; }
+  .guide-links a { padding: 8px 13px; }
+  .faq-section { grid-template-columns: 1fr; gap: 27px; padding-block: 42px; }
+  .faq-intro { position: relative; }
+  .faq-intro h2 br { display: none; }
+  .faq-mark { position: absolute; right: 7px; top: 4px; width: 48px; height: 48px; margin: 0; }
+  summary { font-size: 14px; padding-block: 20px; }
+  details p { padding-right: 9px; }
+  .download-section { padding-block: 48px; }
+  .download-cards { grid-template-columns: 1fr; gap: 15px; }
+  .site-footer { padding-top: 34px; gap: 15px; }
+  .footer-links { gap: 15px; }
+  .footer-note { margin-top: 0; }
+}
+@media (max-width: 380px) {
+  .wrap { width: calc(100% - 32px); }
+  h1, html[lang="zh-CN"] h1 { font-size: clamp(34px, 11.5vw, 43px); }
+  .hero-actions .button { gap: 18px; padding-inline: 18px; }
+  .steps li { grid-template-columns: 99px 1fr; column-gap: 10px; }
+  .steps h3 { font-size: 16px; }
+}
+
+/* ───────────────────────── reduced motion ───────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+  .js .reveal { opacity: 1; transform: none; }
+  .js .highlight::after { transform: rotate(-2deg) scaleX(1); }
+  .button, .button svg { transform: none !important; }
+}
+html[data-reduced-motion] { scroll-behavior: auto; }
+html[data-reduced-motion] *, html[data-reduced-motion] *::before, html[data-reduced-motion] *::after {
+  animation: none !important; transition: none !important;
+}
+html[data-reduced-motion] .reveal { opacity: 1 !important; transform: none !important; }
+html[data-reduced-motion] .highlight::after { transform: rotate(-2deg) scaleX(1) !important; }
+html[data-reduced-motion] :is(.button, .button svg) { transform: none !important; }
+</style>
+</head>
+<body>
+
+<a class="skip-link" href="#main"><span lang="en">Skip to content</span><span lang="zh-CN">跳到正文</span></a>
+
+<!-- ───────────────────────── icon symbols ───────────────────────── -->
+<svg class="symbols" aria-hidden="true" focusable="false">
+  <symbol id="i-logo" viewBox="0 0 24 24">
+    <rect x="2.5" y="4" width="19" height="16" rx="4" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path d="M7 14.5l3 3 7-8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="i-download" viewBox="0 0 24 24">
+    <path d="M12 3.5v11m0 0l-4.2-4.2M12 14.5l4.2-4.2M4.5 19.5h15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="i-code" viewBox="0 0 24 24">
+    <path d="M8.5 7L4 12l4.5 5M15.5 7L20 12l-4.5 5M13.5 4.5l-3 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="i-drive" viewBox="0 0 24 24">
+    <rect x="3" y="5" width="18" height="6.5" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="3" y="12.5" width="18" height="6.5" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <circle cx="7" cy="8.2" r="1.1" fill="currentColor"/><circle cx="7" cy="15.7" r="1.1" fill="currentColor"/>
+  </symbol>
+  <symbol id="i-image" viewBox="0 0 24 24">
+    <rect x="3" y="4.5" width="18" height="15" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <circle cx="9" cy="10" r="1.8" fill="none" stroke="currentColor" stroke-width="1.6"/>
+    <path d="M4.5 17l5-5 4.2 4.2 2.6-2.3 3.2 3.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="i-film" viewBox="0 0 24 24">
+    <rect x="3" y="5" width="18" height="14" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path d="M8 5v14M16 5v14M3 12h18" stroke="currentColor" stroke-width="1.5"/>
+  </symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24">
+    <rect x="8" y="3.5" width="12.5" height="14" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path d="M15.5 20.5h-10a2.5 2.5 0 01-2.5-2.5v-11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="i-progress" viewBox="0 0 24 24">
+    <rect x="3" y="6" width="18" height="12" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path d="M6.5 12h5.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="i-feather" viewBox="0 0 24 24">
+    <path d="M19.5 4.5c-6 0-11 3.5-12.5 9.5L4.5 19.5l5.5-2.5c6-1.5 9.5-6.5 9.5-12.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+    <path d="M11 13l6-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.2 5.2l1.7 1.7M17.1 17.1l1.7 1.7M18.8 5.2l-1.7 1.7M6.9 17.1l-1.7 1.7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="i-help" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path d="M9.3 9.2a2.8 2.8 0 015.4 1c0 1.9-2.7 2.2-2.7 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <circle cx="12" cy="17.2" r="1.15" fill="currentColor"/>
+  </symbol>
+</svg>
+
+<!-- ───────────────────────── header ───────────────────────── -->
+<header class="site-header wrap">
+  <a class="brand" href="#top"><svg aria-hidden="true"><use href="#i-logo"/></svg>RenamePro.</a>
+  <nav aria-label="Sections">
+    <a href="#how"><span lang="en">How it works</span><span lang="zh-CN">原理</span></a>
+    <a href="#features"><span lang="en">Features</span><span lang="zh-CN">特性</span></a>
+    <a href="#formats"><span lang="en">Formats</span><span lang="zh-CN">格式</span></a>
+    <a href="#guides"><span lang="en">Quick start</span><span lang="zh-CN">教程</span></a>
+    <a href="#faq"><span lang="en">FAQ</span><span lang="zh-CN">常见问题</span></a>
+    <a href="#download"><span lang="en">Download</span><span lang="zh-CN">下载</span></a>
+  </nav>
+  <div class="preferences">
+    <div class="lang-picker" role="group" aria-label="Language 语言">
+      <button type="button" id="lang-en" data-lang="en" aria-pressed="false">EN</button>
+      <button type="button" id="lang-zh" data-lang="zh-CN" aria-pressed="true">中文</button>
+    </div>
+    <div class="theme-picker">
+      <svg aria-hidden="true"><use href="#i-sun"/></svg>
+      <select id="theme" aria-label="Color theme 配色主题">
+        <option value="system">System系统</option>
+        <option value="light">Light亮色</option>
+        <option value="dark">Dark暗色</option>
+      </select>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <!-- ───────────────────────── hero ───────────────────────── -->
+  <section class="hero wrap" id="top">
+    <div class="hero-copy">
+      <p class="eyebrow"><span class="status-dot"></span><span lang="en">Windows tray utility · Free &amp; open source</span><span lang="zh-CN">Windows 托盘工具 · 免费开源</span></p>
+      <h1>
+        <span lang="en">Rename the suffix,<br>get the <span class="highlight">real format</span>.</span>
+        <span lang="zh-CN">改个后缀，<br>就<span class="highlight">换了格式</span>。</span>
+      </h1>
+      <p class="hero-description">
+        <span lang="en">Windows only changes the name, never the bytes — so a renamed file often breaks. RenamePro watches your renames in Explorer and truly converts the content to the new format: image, audio or video.</span>
+        <span lang="zh-CN">Windows 改后缀只改名字，不改内容，改完常常得到打不开的坏文件。RenamePro 在后台监听资源管理器里的改名动作，把文件内容真正转换成新格式——图片、音频、视频都行。</span>
+      </p>
+      <div class="hero-actions">
+        <a class="button primary" href="#download">
+          <span lang="en">Download RenamePro</span><span lang="zh-CN">下载 RenamePro</span>
+          <svg aria-hidden="true"><use href="#i-download"/></svg>
+        </a>
+        <a class="text-link" href="https://github.com/Ha2eS1onn/RenamePro">
+          <svg aria-hidden="true"><use href="#i-code"/></svg>
+          <span lang="en">Source on GitHub</span><span lang="zh-CN">GitHub 源码</span>
+        </a>
+      </div>
+      <p class="hero-note">
+        <span lang="en">Windows 10 / 11 x64 · Portable, no installer · No window — it lives in the tray</span>
+        <span lang="zh-CN">Windows 10 / 11 x64 · 绿色便携免安装 · 无主窗口，常驻托盘</span>
+      </p>
+    </div>
+
+    <div class="hero-scene">
+      <svg class="hero-art" viewBox="0 0 560 420" role="img" aria-label="photo.jpg renamed to photo.png, converted in the background with a copy kept">
+        <!-- soft background shapes -->
+        <circle cx="482" cy="86" r="56" fill="var(--art-mint)" opacity=".55"/>
+        <rect x="18" y="300" width="120" height="86" rx="22" fill="var(--art-blue)" opacity=".35"/>
+        <!-- window -->
+        <rect x="42" y="46" width="476" height="286" rx="20" fill="var(--art-paper)" stroke="var(--ink)" stroke-width="3"/>
+        <circle cx="80" cy="82" r="6.5" fill="var(--art-orange)"/>
+        <circle cx="104" cy="82" r="6.5" fill="var(--art-yellow)"/>
+        <circle cx="128" cy="82" r="6.5" fill="var(--art-mint)"/>
+        <path d="M43 108h474" stroke="var(--ink)" stroke-width="2.4" opacity=".5"/>
+        <!-- file row -->
+        <rect x="70" y="136" width="420" height="72" rx="14" fill="var(--wall)" stroke="var(--ink)" stroke-width="2.6"/>
+        <path d="M96 152h20l10 10v28a4 4 0 01-4 4H96a4 4 0 01-4-4v-34a4 4 0 014-4z" fill="var(--art-yellow)" stroke="var(--ink)" stroke-width="2.4" stroke-linejoin="round"/>
+        <path d="M116 152v10h10" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linejoin="round"/>
+        <text x="148" y="181" font-size="23" font-weight="700" fill="var(--ink)" font-family="inherit">photo</text>
+        <text x="212" y="181" font-size="23" font-weight="700" fill="var(--muted)" font-family="inherit" text-decoration="line-through">.jpg</text>
+        <path d="M262 172h40m0 0l-9-8m9 8l-9 8" fill="none" stroke="var(--orange)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="318" y="152" width="132" height="40" rx="20" fill="var(--soft-orange)" stroke="var(--orange)" stroke-width="2.4"/>
+        <text x="384" y="179" font-size="21" font-weight="700" fill="var(--ink)" text-anchor="middle" font-family="inherit">.png</text>
+        <!-- progress -->
+        <rect x="70" y="238" width="420" height="16" rx="8" fill="var(--wall)" stroke="var(--ink)" stroke-width="2.2"/>
+        <rect x="73" y="241" width="266" height="10" rx="5" fill="var(--orange)"/>
+        <!-- backup note -->
+        <text x="70" y="298" font-size="15" fill="var(--muted)" font-family="inherit">photo - copy.jpg</text>
+        <path d="M52 288q-8 12 0 24" fill="none" stroke="var(--green)" stroke-width="3" stroke-linecap="round"/>
+        <!-- tray -->
+        <rect x="368" y="352" width="150" height="52" rx="15" fill="var(--paper)" stroke="var(--ink)" stroke-width="2.8"/>
+        <circle cx="398" cy="378" r="12" fill="var(--art-mint)" stroke="var(--ink)" stroke-width="2.4"/>
+        <path d="M392 378l4.5 4.5 8-8.5" fill="none" stroke="var(--ink)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="422" y="384" font-size="15" fill="var(--ink)" font-family="inherit">RenamePro</text>
+        <path d="M300 344q22 8 46 12" fill="none" stroke="var(--muted)" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="1 9"/>
+        <!-- squiggle -->
+        <path d="M66 356q14-12 28 0t28 0" fill="none" stroke="var(--orange)" stroke-width="3.2" stroke-linecap="round"/>
+      </svg>
+      <div class="scene-caption">
+        <p><span lang="en">“Just rename it. Leave the rest to me.”</span><span lang="zh-CN">「你只管改名，剩下的交给我。」</span></p>
+        <span class="caption-line" aria-hidden="true"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── how it works ───────────────────────── -->
+  <section class="how-section" id="how">
+    <div class="wrap">
+      <div class="section-heading">
+        <p class="eyebrow"><span class="status-dot"></span><span lang="en">How it works</span><span lang="zh-CN">工作原理</span></p>
+        <h2><span lang="en">Rename it. It gets converted.</span><span lang="zh-CN">改个名字，格式就转好了。</span></h2>
+        <p><span lang="en">Three quiet steps happen behind the tray icon.</span><span lang="zh-CN">托盘图标安静地待着，三步在后台悄悄完成。</span></p>
+      </div>
+
+      <ol class="steps">
+        <li class="reveal">
+          <div class="step-art">
+            <svg viewBox="0 0 240 126" aria-hidden="true">
+              <rect x="0" y="0" width="240" height="126" rx="12" fill="var(--wall)"/>
+              <rect x="18" y="38" width="204" height="50" rx="10" fill="var(--art-paper)" stroke="var(--ink)" stroke-width="2.6"/>
+              <rect x="32" y="52" width="132" height="22" rx="6" fill="var(--wall)" stroke="var(--line)" stroke-width="1.8"/>
+              <text x="42" y="68" font-size="14" font-weight="700" fill="var(--ink)" font-family="inherit">photo<tspan class="s1-ext-old">.jpg</tspan><tspan class="s1-ext-new" fill="var(--orange)" opacity="0">.png</tspan></text>
+              <rect x="174" y="52" width="34" height="22" rx="6" fill="var(--soft-orange)" stroke="var(--orange)" stroke-width="2"/>
+              <path d="M182 63h18" stroke="var(--orange)" stroke-width="2.6" stroke-linecap="round"/>
+              <g class="s1-cursor">
+                <path d="M198 22l0 24 6-6 5 10 4-2-5-10 8-1z" fill="var(--ink)" stroke="var(--art-paper)" stroke-width="1.6" stroke-linejoin="round"/>
+              </g>
+            </svg>
+          </div>
+          <p class="step-number">01<span>/ 03</span></p>
+          <h3><span lang="en">Rename the extension.</span><span lang="zh-CN">在资源管理器里改后缀。</span></h3>
+          <p><span lang="en">Rename <code>photo.jpg</code> to <code>photo.png</code> right where the file is. Nothing else to open.</span><span lang="zh-CN">直接在文件所在位置把 <code>photo.jpg</code> 改成 <code>photo.png</code>，不用打开任何软件。</span></p>
+        </li>
+
+        <li class="reveal">
+          <div class="step-art">
+            <svg viewBox="0 0 240 126" aria-hidden="true">
+              <rect x="0" y="0" width="240" height="126" rx="12" fill="var(--wall)"/>
+              <rect x="16" y="42" width="58" height="42" rx="8" fill="var(--art-yellow)" stroke="var(--ink)" stroke-width="2.6"/>
+              <rect x="166" y="42" width="58" height="42" rx="8" fill="var(--art-mint)" stroke="var(--ink)" stroke-width="2.6"/>
+              <text x="45" y="68" font-size="12" font-weight="700" fill="var(--ink)" text-anchor="middle" font-family="inherit">.jpg</text>
+              <text x="195" y="68" font-size="12" font-weight="700" fill="var(--ink)" text-anchor="middle" font-family="inherit">.png</text>
+              <g class="s2-arrow">
+                <path d="M84 63h52m0 0l-10-9m10 9l-10 9" fill="none" stroke="var(--orange)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <rect x="98" y="34" width="26" height="18" rx="4" fill="var(--art-paper)" stroke="var(--ink)" stroke-width="2.2"/>
+              </g>
+              <g class="s2-gear">
+                <circle cx="120" cy="100" r="10" fill="none" stroke="var(--green)" stroke-width="2.6"/>
+                <path d="M120 86v-5M120 119v-5M134 100h5M101 100h5M130 90l3.5-3.5M106.5 113.5L110 110M130 110l3.5 3.5M106.5 86.5L110 90" stroke="var(--green)" stroke-width="2.4" stroke-linecap="round"/>
+              </g>
+            </svg>
+          </div>
+          <p class="step-number">02<span>/ 03</span></p>
+          <h3><span lang="en">Verified, backed up, converted.</span><span lang="zh-CN">校验、备份、转换。</span></h3>
+          <p><span lang="en">The real format is checked from the file header, a copy of the original is kept, then the content is converted and swapped in atomically.</span><span lang="zh-CN">先按文件头校验真实格式，保留一份原格式副本，再把内容转换后原子替换回去。</span></p>
+        </li>
+
+        <li class="reveal">
+          <div class="step-art">
+            <svg viewBox="0 0 240 126" aria-hidden="true">
+              <rect x="0" y="0" width="240" height="126" rx="12" fill="var(--wall)"/>
+              <rect x="22" y="30" width="196" height="66" rx="12" fill="var(--art-paper)" stroke="var(--ink)" stroke-width="2.6"/>
+              <text x="38" y="52" font-size="11" fill="var(--muted)" font-family="inherit">converting 2 files…</text>
+              <rect x="38" y="62" width="164" height="12" rx="6" fill="var(--wall)" stroke="var(--line)" stroke-width="1.6"/>
+              <rect class="s3-fill" x="40" y="64" width="160" height="8" rx="4" fill="var(--orange)"/>
+              <g class="s3-check">
+                <circle cx="196" cy="102" r="14" fill="var(--art-mint)" stroke="var(--ink)" stroke-width="2.4"/>
+                <path d="M189 102l5 5 9-10" fill="none" stroke="var(--ink)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+              </g>
+            </svg>
+          </div>
+          <p class="step-number">03<span>/ 03</span></p>
+          <h3><span lang="en">Progress, then a toast.</span><span lang="zh-CN">系统进度框，完成后通知。</span></h3>
+          <p><span lang="en">The same progress dialog Explorer uses — batched and cancellable. A Windows Toast summarizes the run when it finishes.</span><span lang="zh-CN">弹出与资源管理器同款的进度框，多任务聚合、可取消；完成后 Toast 汇总通知。</span></p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── features ───────────────────────── -->
+  <section class="features-section" id="features">
+    <div class="wrap">
+      <div class="section-heading">
+        <p class="eyebrow"><span class="status-dot"></span><span lang="en">Features</span><span lang="zh-CN">核心特性</span></p>
+        <h2><span lang="en">Small tool, careful work.</span><span lang="zh-CN">工具不大，活儿很细。</span></h2>
+        <p><span lang="en">Built to be invisible — and to never eat your files.</span><span lang="zh-CN">平时感觉不到它的存在，也绝不吞掉你的文件。</span></p>
+      </div>
+
+      <ul class="features-grid">
+        <li class="feature-card reveal">
+          <div class="feature-mark"><svg aria-hidden="true"><use href="#i-drive"/></svg></div>
+          <h3><span lang="en">Watches every fixed drive</span><span lang="zh-CN">监听所有固定磁盘</span></h3>
+          <p><span lang="en"><code>FileSystemWatcher</code> across all fixed drives, four cheap early-exit filters, 300ms rename debounce, and automatic listener rebuild with backoff.</span><span lang="zh-CN"><code>FileSystemWatcher</code> 覆盖全部固定磁盘，四级早退过滤、300ms 防抖合并，监听出错按 1s/5s/30s 自动重建。</span></p>
+        </li>
+        <li class="feature-card reveal">
+          <div class="feature-mark"><svg aria-hidden="true"><use href="#i-image"/></svg></div>
+          <h3><span lang="en">Images, mostly lossless</span><span lang="zh-CN">图片互转，多数无损</span></h3>
+          <p><span lang="en">png / jpg / bmp / gif / webp / tiff convert through Magick.NET. Only JPEG output is lossy (quality configurable); WebP encodes losslessly.</span><span lang="zh-CN">png / jpg / bmp / gif / webp / tiff 经 Magick.NET 互转；仅 JPEG 输出有损（质量可配），WebP 走无损编码。</span></p>
+        </li>
+        <li class="feature-card reveal">
+          <div class="feature-mark"><svg aria-hidden="true"><use href="#i-film"/></svg></div>
+          <h3><span lang="en">Stream-copy first for A/V</span><span lang="zh-CN">音视频优先流拷贝</span></h3>
+          <p><span lang="en">FFmpeg remuxes with <code>-c copy</code> whenever the codecs fit — seconds, regardless of file size — and re-encodes only when it has to.</span><span lang="zh-CN">编码与目标容器兼容时 FFmpeg 只重封装不重编码，秒级完成、与体积无关；不兼容才自动重编码。</span></p>
+        </li>
+        <li class="feature-card reveal">
+          <div class="feature-mark"><svg aria-hidden="true"><use href="#i-copy"/></svg></div>
+          <h3><span lang="en">A copy before anything</span><span lang="zh-CN">转换前先留副本</span></h3>
+          <p><span lang="en">The original is copied aside first (<code>photo - copy.jpg</code>). Failures can roll back automatically, and your backup is never deleted for you.</span><span lang="zh-CN">转换前先复制一份原格式副本（<code>photo - 副本.jpg</code>）；失败可自动回滚，程序永不自动删除副本。</span></p>
+        </li>
+        <li class="feature-card reveal">
+          <div class="feature-mark"><svg aria-hidden="true"><use href="#i-progress"/></svg></div>
+          <h3><span lang="en">Native progress &amp; toasts</span><span lang="zh-CN">系统级进度与通知</span></h3>
+          <p><span lang="en">The Shell progress dialog (<code>IOperationsProgressDialog</code>) Explorer uses, with batching, cancel support and a Windows Toast summary.</span><span lang="zh-CN">Shell COM 进度对话框（资源管理器同款 <code>IOperationsProgressDialog</code>），多任务聚合、可取消，完成后 Toast 汇总。</span></p>
+        </li>
+        <li class="feature-card reveal">
+          <div class="feature-mark"><svg aria-hidden="true"><use href="#i-feather"/></svg></div>
+          <h3><span lang="en">Quiet and light</span><span lang="zh-CN">安静且轻量</span></h3>
+          <p><span lang="en">No window, no console, single instance. About 57MB idle working set; Magick loads only when an image actually converts.</span><span lang="zh-CN">无窗口、无控制台、单实例运行；空载工作集约 57MB，Magick 仅在真正转换图片时才加载。</span></p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── formats ───────────────────────── -->
+  <section class="formats-section" id="formats">
+    <div class="wrap">
+      <div class="section-heading">
+        <p class="eyebrow"><span class="status-dot"></span><span lang="en">Formats</span><span lang="zh-CN">格式矩阵</span></p>
+        <h2><span lang="en">What goes in, what comes out.</span><span lang="zh-CN">进什么，出什么。</span></h2>
+      </div>
+
+      <ul class="format-groups">
+        <li class="format-group reveal">
+          <h3><span lang="en">Images · converted</span><span lang="zh-CN">图片 · 互转</span></h3>
+          <div class="chips">
+            <span class="chip">png</span><span class="chip">jpg</span><span class="chip">jpeg</span>
+            <span class="chip">bmp</span><span class="chip">gif</span><span class="chip">webp</span><span class="chip">tiff</span>
+            <span class="chip accent">.ico 涉及即跳过</span>
+          </div>
+          <p><span lang="en">GIF sources follow <code>gifPolicy</code>: first frame only, or skipped. Combinations involving <code>.ico</code> are ignored on purpose.</span><span lang="zh-CN">GIF 源按 <code>gifPolicy</code> 取首帧或跳过；涉及 <code>.ico</code> 的组合有意忽略，避免生成不稳定的图标。</span></p>
+        </li>
+        <li class="format-group reveal">
+          <h3><span lang="en">Video · remux or re-encode</span><span lang="zh-CN">视频 · 重封装或重编码</span></h3>
+          <div class="chips">
+            <span class="chip">mp4</span><span class="chip">mkv</span><span class="chip">avi</span><span class="chip">mov</span>
+            <span class="chip">wmv</span><span class="chip">ts</span><span class="chip">webm</span><span class="chip">flv</span>
+          </div>
+          <p><span lang="en">Video → audio extracts the track; audio → video wraps an audio-only stream. Stream copy whenever the codecs fit.</span><span lang="zh-CN">视频转音频为提取音轨；音频转视频为仅音频流封装。编码兼容时优先流拷贝。</span></p>
+        </li>
+        <li class="format-group reveal">
+          <h3><span lang="en">Audio · per-target encoder</span><span lang="zh-CN">音频 · 按目标选编码器</span></h3>
+          <div class="chips">
+            <span class="chip">mp3</span><span class="chip">wav</span><span class="chip">flac</span>
+            <span class="chip">aac</span><span class="chip">ogg</span><span class="chip">m4a</span>
+          </div>
+          <p><span lang="en">Lossy → lossless is allowed but noted in the log: it won't improve the sound.</span><span lang="zh-CN">有损转无损不阻断，但日志会提示：音质并不会因此提升。</span></p>
+        </li>
+      </ul>
+      <p class="formats-note"><span lang="en">Anything outside the matrix is skipped silently and written to <code>log.txt</code> — never a surprise popup.</span><span lang="zh-CN">矩阵之外的组合静默跳过并写入 <code>log.txt</code>，不会弹任何打扰提示。</span></p>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── quick start ───────────────────────── -->
+  <section class="start-section" id="guides">
+    <div class="wrap">
+      <div class="section-heading">
+        <p class="eyebrow"><span class="status-dot"></span><span lang="en">Quick start</span><span lang="zh-CN">快速开始</span></p>
+        <h2><span lang="en">Start in one minute.</span><span lang="zh-CN">一分钟上手。</span></h2>
+        <p><span lang="en">Download, extract, double-click. That is the whole setup.</span><span lang="zh-CN">下载、解压、双击——全部安装步骤就这么多。</span></p>
+      </div>
+
+      <div class="guide-links">
+        <a href="#guide-release"><span lang="en">Release build</span><span lang="zh-CN">发布包</span></a>
+        <a href="#guide-build"><span lang="en">Build from source</span><span lang="zh-CN">源码构建</span></a>
+        <a href="#guide-config"><span lang="en">config.json</span><span lang="zh-CN">配置说明</span></a>
+      </div>
+
+      <details class="guide" id="guide-release" open>
+        <summary>
+          <span class="guide-number">01</span>
+          <span class="guide-heading">
+            <span lang="en">Download the release</span><span lang="zh-CN">下载发布包使用</span>
+            <small><span lang="en">Extract anywhere and double-click RenamePro.exe</span><span lang="zh-CN">解压任意目录，双击 RenamePro.exe</span></small>
+          </span>
+        </summary>
+        <div class="guide-body">
+          <ol class="guide-steps">
+            <li><strong><span lang="en">Pick a package.</span><span lang="zh-CN">选一个包。</span></strong>
+              <p><span lang="en"><code>RenamePro-Full-*.zip</code> (images + audio/video, bundles FFmpeg) or <code>RenamePro-Image-*.zip</code> (smallest, images only).</span><span lang="zh-CN"><code>RenamePro-Full-*.zip</code>（完整版，图片 + 音视频，内置 FFmpeg）或 <code>RenamePro-Image-*.zip</code>（图片版，体积最小）。</span></p>
+            </li>
+            <li><strong><span lang="en">Extract and run.</span><span lang="zh-CN">解压后运行。</span></strong>
+              <p><span lang="en">Keep the folder layout intact and double-click <code>RenamePro.exe</code>. No installer, no window — a tray icon appears.</span><span lang="zh-CN">保持目录结构完整，双击 <code>RenamePro.exe</code>。免安装、无窗口，通知区出现托盘图标。</span></p>
+            </li>
+            <li><strong><span lang="en">Rename an extension.</span><span lang="zh-CN">改一个后缀试试。</span></strong>
+              <p><span lang="en">In Explorer, rename <code>photo.jpg</code> to <code>photo.png</code>. Conversion starts on its own.</span><span lang="zh-CN">在资源管理器里把 <code>photo.jpg</code> 改成 <code>photo.png</code>，转换自动开始。</span></p>
+            </li>
+            <li><strong><span lang="en">Use the tray menu.</span><span lang="zh-CN">托盘菜单。</span></strong>
+              <p><span lang="en">Pause / resume watching, start with Windows, reload config, exit.</span><span lang="zh-CN">暂停监听 / 继续监听、开机自启动、重新加载配置、退出。</span></p>
+            </li>
+          </ol>
+          <aside class="guide-note">
+            <h3><span lang="en">First run</span><span lang="zh-CN">首次运行</span></h3>
+            <p><span lang="en"><code>config.json</code> (commented, Notepad-friendly) and <code>log.txt</code> are created next to the exe.</span><span lang="zh-CN">会在程序同级目录生成 <code>config.json</code>（带中文注释，记事本可改）与 <code>log.txt</code>。</span></p>
+            <p><span lang="en">Checking “start with Windows” triggers one UAC prompt — allow it. It is registered through Task Scheduler.</span><span lang="zh-CN">勾选“开机自启动”会弹一次 UAC，允许即可；自启通过任务计划程序注册。</span></p>
+            <a class="button primary download-button" href="https://github.com/Ha2eS1onn/RenamePro/releases/latest">
+              <span lang="en">Get the latest release</span><span lang="zh-CN">下载最新发布包</span>
+              <svg aria-hidden="true"><use href="#i-download"/></svg>
+            </a>
+          </aside>
+        </div>
+      </details>
+
+      <details class="guide" id="guide-build">
+        <summary>
+          <span class="guide-number">02</span>
+          <span class="guide-heading">
+            <span lang="en">Build from source</span><span lang="zh-CN">从源码构建</span>
+            <small><span lang="en">.NET 8 SDK · Windows 10 / 11 x64</span><span lang="zh-CN">.NET 8 SDK · Windows 10 / 11 x64</span></small>
+          </span>
+        </summary>
+        <div class="guide-body">
+          <ol class="guide-steps">
+            <li><strong><span lang="en">Clone the repository.</span><span lang="zh-CN">克隆仓库。</span></strong>
+              <p><code>git clone https://github.com/Ha2eS1onn/RenamePro.git</code></p>
+            </li>
+            <li><strong><span lang="en">Add FFmpeg (optional).</span><span lang="zh-CN">放入 FFmpeg（可选）。</span></strong>
+              <p><span lang="en">Put <code>ffmpeg.exe</code> and <code>ffprobe.exe</code> into the <code>ffmpeg\</code> folder for audio/video support. Image conversion works without them.</span><span lang="zh-CN">把 <code>ffmpeg.exe</code> 与 <code>ffprobe.exe</code> 放入 <code>ffmpeg\</code> 目录以启用音视频功能；没有它们图片转换照常工作。</span></p>
+            </li>
+            <li><strong><span lang="en">Build.</span><span lang="zh-CN">构建。</span></strong>
+              <p><code>dotnet build RenamePro.csproj -c Debug</code></p>
+            </li>
+            <li><strong><span lang="en">Package a portable zip.</span><span lang="zh-CN">打包便携发布包。</span></strong>
+              <p><code>powershell -ExecutionPolicy Bypass -File publish.ps1</code></p>
+            </li>
+          </ol>
+          <aside class="guide-note">
+            <h3><span lang="en">Design constraints</span><span lang="zh-CN">设计约束</span></h3>
+            <p><span lang="en">Magick.NET is the only third-party NuGet package. No <code>PublishTrim</code> (it breaks COM interop), no <code>ReadyToRun</code> (doubles the size).</span><span lang="zh-CN">除 Magick.NET 外不引入任何第三方包；不使用 <code>PublishTrim</code>（破坏 COM Interop），不使用 <code>ReadyToRun</code>（体积翻倍）。</span></p>
+            <p><span lang="en">Output is a single-file self-contained build — a green portable zip.</span><span lang="zh-CN">产物为单文件自包含构建，即绿色便携 zip。</span></p>
+          </aside>
+        </div>
+      </details>
+
+      <details class="guide" id="guide-config">
+        <summary>
+          <span class="guide-number">03</span>
+          <span class="guide-heading">
+            <span lang="en">config.json essentials</span><span lang="zh-CN">config.json 配置要点</span>
+            <small><span lang="en">Edited with Notepad · reload from the tray menu</span><span lang="zh-CN">记事本即可修改 · 托盘菜单重新加载生效</span></small>
+          </span>
+        </summary>
+        <div class="guide-body">
+          <dl class="config-list">
+            <div><dt><code>enableBackup</code> = true</dt><dd><span lang="en">Keep an original-format copy before converting. Recommended.</span><span lang="zh-CN">转换前是否创建原格式副本，建议保持开启。</span></dd></div>
+            <div><dt><code>autoRollbackOnFailure</code> = false</dt><dd><span lang="en">On failure, delete the target and move the copy back to the original name.</span><span lang="zh-CN">转换失败时自动回滚：删除目标文件并把副本移回原名。</span></dd></div>
+            <div><dt><code>imageQuality</code> = 92</dt><dd><span lang="en">JPEG output quality, 1–100. Only affects conversions into jpg.</span><span lang="zh-CN">JPEG 输出质量 1~100，仅对转出 jpg 生效。</span></dd></div>
+            <div><dt><code>gifPolicy</code> = "first-frame"</dt><dd><span lang="en">GIF source handling: take the first frame, or skip.</span><span lang="zh-CN">GIF 源策略：取首帧转换，或直接忽略。</span></dd></div>
+            <div><dt><code>watchDrives</code> = []</dt><dd><span lang="en">Limit watched drives, e.g. <code>["D:\\", "E:\\"]</code>. Empty means all fixed drives.</span><span lang="zh-CN">限定监听盘符，例如 <code>["D:\\", "E:\\"]</code>；留空表示监听所有固定磁盘。</span></dd></div>
+            <div><dt><code>showProgressDialog</code> = true</dt><dd><span lang="en">Set false for fully silent conversion — the Shell COM dialog is never initialized.</span><span lang="zh-CN">设为 <code>false</code> 时完全不初始化 Shell COM，静默转换。</span></dd></div>
+          </dl>
+          <aside class="guide-note">
+            <h3><span lang="en">Safe by default</span><span lang="zh-CN">默认即安全</span></h3>
+            <p><span lang="en">Out-of-range values are clamped (<code>imageQuality</code> 1–100, <code>imageConcurrency</code> 1–8); a broken config falls back to defaults and logs — it never stops the program.</span><span lang="zh-CN">越界值自动钳制（<code>imageQuality</code> 1~100、<code>imageConcurrency</code> 1~8）；配置解析失败回退默认值并记日志，不影响运行。</span></p>
+            <p><span lang="en"><code>imageConcurrency</code> takes effect on the next start while the queue is busy.</span><span lang="zh-CN">队列忙碌时修改 <code>imageConcurrency</code> 需下次启动生效。</span></p>
+          </aside>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── faq ───────────────────────── -->
+  <section class="faq-section wrap" id="faq">
+    <div class="faq-intro">
+      <p class="eyebrow"><span class="status-dot"></span><span lang="en">FAQ</span><span lang="zh-CN">常见问题</span></p>
+      <h2><span lang="en">Good to know.<br>Still curious?</span><span lang="zh-CN">你可能<br>还想知道。</span></h2>
+      <svg class="faq-mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-help"/></svg>
+    </div>
+
+    <div class="questions">
+      <details>
+        <summary><span lang="en">Which platforms are supported?</span><span lang="zh-CN">支持哪些平台？</span></summary>
+        <p><span lang="en">Windows 10 / 11 x64 only. RenamePro is built on Shell COM and WinRT components that exist only on Windows — the progress dialog, Toast notifications and Task Scheduler autostart all depend on them.</span><span lang="zh-CN">仅支持 Windows 10 / 11 x64。RenamePro 依赖 Shell COM 与 WinRT 系统组件：进度对话框、Toast 通知、任务计划自启都建立在它们之上。</span></p>
+      </details>
+      <details>
+        <summary><span lang="en">Can it corrupt my files?</span><span lang="zh-CN">会把文件改坏吗？</span></summary>
+        <p><span lang="en">It checks the magic number before converting and refuses when the real format doesn't match. Output goes to a temp file in the same directory and is swapped in atomically; on failure the target is left untouched.</span><span lang="zh-CN">转换前先读文件头 magic number 校验真实格式，不一致直接跳过。输出先写同目录临时文件再原子替换；失败时目标文件保持原状，不留半成品。</span></p>
+      </details>
+      <details>
+        <summary><span lang="en">Can I get the original back?</span><span lang="zh-CN">能回退吗？</span></summary>
+        <p><span lang="en">Yes. A copy of the original format stays next to the file (<code>photo - copy.jpg</code>, named to match your system language) and is never deleted automatically. Turn on <code>autoRollbackOnFailure</code> and failures restore the original name by themselves.</span><span lang="zh-CN">可以。原格式副本会留在同目录（中文系统 <code>photo - 副本.jpg</code>，英文系统 <code>photo - copy.jpg</code>），程序永不自动删除；开启 <code>autoRollbackOnFailure</code> 后失败还会自动恢复原名。</span></p>
+      </details>
+      <details>
+        <summary><span lang="en">Why is .ico ignored?</span><span lang="zh-CN">为什么忽略 .ico？</span></summary>
+        <p><span lang="en">Icon files are notoriously unstable across conversions, so any combination involving <code>.ico</code> is skipped silently and only logged. Everything else in the matrix converts normally.</span><span lang="zh-CN">图标文件跨格式转换容易产生不稳定结果，因此涉及 <code>.ico</code> 的组合一律静默跳过、只记日志；矩阵内其他格式正常转换。</span></p>
+      </details>
+      <details>
+        <summary><span lang="en">Will it slow down my PC?</span><span lang="zh-CN">占用高吗？</span></summary>
+        <p><span lang="en">Idle it sits at about 57MB working set (≈12MB private memory). Watching uses name-change notifications only, processing is debounced 300ms, queues are concurrency-limited, and Magick memory is capped at 512MB.</span><span lang="zh-CN">空载工作集约 57MB（私有内存约 12MB）。监听只用文件名通知，300ms 防抖合并，队列限并发，Magick 内存上限 512MB，不会拖垮系统。</span></p>
+      </details>
+      <details>
+        <summary><span lang="en">What's the license?</span><span lang="zh-CN">开源许可是什么？</span></summary>
+        <p><span lang="en">RenamePro is GPL-3.0. The repository ships full source; FFmpeg binaries are not included in the repo — when you distribute them, follow the license of the FFmpeg build you use and credit the project.</span><span lang="zh-CN">RenamePro 以 GPL-3.0 发布，仓库包含全部源代码。仓库不含 FFmpeg 二进制；分发含 FFmpeg 的构建时，请遵守其对应许可并注明来源。</span></p>
+      </details>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── download ───────────────────────── -->
+  <section class="download-section" id="download">
+    <div class="wrap">
+      <div class="section-heading">
+        <p class="eyebrow"><span class="status-dot"></span><span lang="en">Download</span><span lang="zh-CN">下载</span></p>
+        <h2><span lang="en">Get RenamePro.</span><span lang="zh-CN">下载 RenamePro。</span></h2>
+        <p><span lang="en">Portable. Extract and double-click.</span><span lang="zh-CN">绿色便携，解压即用。</span></p>
+      </div>
+
+      <p class="release-note">
+        <span lang="en">Released on GitHub · GPL-3.0 · Windows 10 / 11 x64</span>
+        <span lang="zh-CN">发布于 GitHub · GPL-3.0 · Windows 10 / 11 x64</span>
+      </p>
+
+      <div class="download-cards">
+        <div class="download-card reveal">
+          <div class="feature-mark"><svg aria-hidden="true"><use href="#i-film"/></svg></div>
+          <h3><span lang="en">Full build</span><span lang="zh-CN">完整版</span></h3>
+          <p><span lang="en">Images and audio/video, all features. Bundles <code>ffmpeg.exe</code> / <code>ffprobe.exe</code>. Package: <code>RenamePro-Full-*.zip</code></span><span lang="zh-CN">图片 + 音视频功能齐全，内置 <code>ffmpeg.exe</code> / <code>ffprobe.exe</code>。包名：<code>RenamePro-Full-*.zip</code></span></p>
+          <a class="button primary download-button" href="https://github.com/Ha2eS1onn/RenamePro/releases/latest">
+            <svg aria-hidden="true"><use href="#i-download"/></svg>
+            <span lang="en">Download from GitHub</span><span lang="zh-CN">GitHub 下载</span>
+          </a>
+          <a href="https://github.com/Ha2eS1onn/RenamePro/releases"><span lang="en">Release notes</span><span lang="zh-CN">版本说明</span></a>
+        </div>
+
+        <div class="download-card reveal">
+          <div class="feature-mark"><svg aria-hidden="true"><use href="#i-image"/></svg></div>
+          <h3><span lang="en">Image build</span><span lang="zh-CN">图片版</span></h3>
+          <p><span lang="en">Smallest download. Image conversion only; audio/video renames are logged and skipped. Package: <code>RenamePro-Image-*.zip</code></span><span lang="zh-CN">体积最小，仅图片转换；音视频改名只记日志跳过。包名：<code>RenamePro-Image-*.zip</code></span></p>
+          <a class="button primary download-button" href="https://github.com/Ha2eS1onn/RenamePro/releases/latest">
+            <svg aria-hidden="true"><use href="#i-download"/></svg>
+            <span lang="en">Download from GitHub</span><span lang="zh-CN">GitHub 下载</span>
+          </a>
+          <a href="https://github.com/Ha2eS1onn/RenamePro/releases"><span lang="en">More downloads</span><span lang="zh-CN">更多下载</span></a>
+        </div>
+      </div>
+
+      <div class="download-help">
+        <a class="text-link" href="https://github.com/Ha2eS1onn/RenamePro">
+          <svg aria-hidden="true"><use href="#i-code"/></svg>
+          <span lang="en">Browse the source and README on GitHub</span><span lang="zh-CN">前往 GitHub 查看源码与完整文档</span>
+        </a>
+        <p><span lang="en">RenamePro is free software under GPL-3.0. Contributions and issue reports are welcome.</span><span lang="zh-CN">RenamePro 是 GPL-3.0 下的自由软件，欢迎提交 Issue 与贡献代码。</span></p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ───────────────────────── footer ───────────────────────── -->
+<footer class="site-footer wrap">
+  <div class="footer-identity">
+    <svg aria-hidden="true"><use href="#i-logo"/></svg>RenamePro.
+    <p><span lang="en">Rename the suffix, get the real format.</span><span lang="zh-CN">改个后缀，就换了格式。</span></p>
+  </div>
+  <div class="footer-links">
+    <a href="https://github.com/Ha2eS1onn/RenamePro"><span lang="en">Source on GitHub</span><span lang="zh-CN">GitHub 源码</span></a>
+    <a href="https://github.com/Ha2eS1onn/RenamePro/blob/main/LICENSE"><span lang="en">GPL-3.0 license</span><span lang="zh-CN">GPL-3.0 许可证</span></a>
+    <a href="https://github.com/Ha2eS1onn/RenamePro/blob/main/README.md"><span lang="en">Documentation</span><span lang="zh-CN">使用文档</span></a>
+  </div>
+
+  <details class="display-settings">
+    <summary><span lang="en">Display settings</span><span lang="zh-CN">显示设置</span></summary>
+    <label>
+      <input type="checkbox" id="reduce-motion">
+      <span lang="en">Reduce motion — turn off decorative animations</span>
+      <span lang="zh-CN">减少动画——关闭装饰性动画效果</span>
+    </label>
+    <p><span lang="en">Your system “reduce motion” preference is always respected; this switch forces animations off everywhere.</span><span lang="zh-CN">系统“减少动态效果”偏好始终生效；此开关可强制全站关闭动画。</span></p>
+  </details>
+
+  <p class="footer-note">
+    <span lang="en">RenamePro · GPL-3.0 · Built with Magick.NET and FFmpeg</span>
+    <span lang="zh-CN">RenamePro · GPL-3.0 · 基于 Magick.NET 与 FFmpeg 构建</span>
+  </p>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+  var root = document.documentElement;
+
+  /* ── storage helpers (private mode safe) ── */
+  function load(key) {
+    try { return localStorage.getItem(key); } catch (e) { return null; }
+  }
+  function save(key, value) {
+    try { localStorage.setItem(key, value); } catch (e) { /* ignore */ }
+  }
+
+  /* ── language ── */
+  var langButtons = [
+    document.getElementById('lang-en'),
+    document.getElementById('lang-zh')
+  ];
+  var themeSelect = document.getElementById('theme');
+
+  function setLanguage(lang) {
+    root.lang = lang;
+    langButtons.forEach(function (btn) {
+      if (btn) btn.setAttribute('aria-pressed', String(btn.dataset.lang === lang));
+    });
+    if (themeSelect) {
+      themeSelect.options[0].textContent = lang === 'en' ? 'System' : '跟随系统';
+      themeSelect.options[1].textContent = lang === 'en' ? 'Light' : '亮色';
+      themeSelect.options[2].textContent = lang === 'en' ? 'Dark' : '暗色';
+    }
+    save('rp-lang', lang);
+  }
+
+  langButtons.forEach(function (btn) {
+    if (!btn) return;
+    btn.addEventListener('click', function () { setLanguage(btn.dataset.lang); });
+  });
+
+  /* ── theme ── */
+  function setTheme(mode) {
+    if (mode === 'light' || mode === 'dark') {
+      root.setAttribute('data-theme', mode);
+    } else {
+      root.removeAttribute('data-theme');
+    }
+    if (themeSelect) themeSelect.value = mode;
+    save('rp-theme', mode);
+  }
+  if (themeSelect) {
+    themeSelect.addEventListener('change', function () { setTheme(themeSelect.value); });
+  }
+
+  /* ── reduced motion ── */
+  var motionToggle = document.getElementById('reduce-motion');
+  function setReducedMotion(on) {
+    if (on) { root.setAttribute('data-reduced-motion', ''); }
+    else { root.removeAttribute('data-reduced-motion'); }
+    if (motionToggle) motionToggle.checked = on;
+    save('rp-reduced-motion', on ? '1' : '0');
+  }
+  if (motionToggle) {
+    motionToggle.addEventListener('change', function () { setReducedMotion(motionToggle.checked); });
+  }
+
+  /* ── init preferences ── */
+  setLanguage(load('rp-lang') === 'en' ? 'en' : 'zh-CN');
+  setTheme(load('rp-theme') || 'system');
+  setReducedMotion(load('rp-reduced-motion') === '1');
+
+  /* ── scroll reveal (one-shot, staggered by CSS) ── */
+  var revealables = document.querySelectorAll('.reveal');
+  if ('IntersectionObserver' in window && revealables.length) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible');
+          io.unobserve(entry.target);
+        }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    revealables.forEach(function (el) { io.observe(el); });
+  } else {
+    revealables.forEach(function (el) { el.classList.add('is-visible'); });
+  }
+})();
+</script>
+</body>
+</html>
