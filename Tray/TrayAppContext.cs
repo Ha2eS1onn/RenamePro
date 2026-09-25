@@ -196,21 +196,13 @@ public sealed class TrayAppContext : ApplicationContext
         });
     }
 
-    /// <summary>启动时自动注册开机自启动（已注册则跳过，避免每次启动都弹 UAC）。</summary>
+    /// <summary>
+    /// 启动时确保自启动任务存在且指向当前程序（已注册且指向正确则跳过，避免每次启动都弹 UAC）；
+    /// 任务指向旧路径时自动重新注册（构建目录变更、程序迁移场景）。
+    /// </summary>
     private void EnsureStartupRegistration()
     {
-        Task.Run(() =>
-        {
-            if (StartupManager.IsRegistered())
-            {
-                Log.Info("开机自启动任务已存在，跳过注册");
-                return;
-            }
-            if (StartupManager.Register())
-                Log.Info("已自动注册开机自启动（任务计划程序）");
-            else
-                Log.Warn("自动注册开机自启动失败，可在托盘菜单“开机自启动”重试");
-        });
+        Task.Run(StartupManager.EnsureRegistered);
     }
 
     /// <summary>退出程序：停监听、释放托盘图标。</summary>
