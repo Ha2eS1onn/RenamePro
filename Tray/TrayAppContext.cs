@@ -1,5 +1,6 @@
 using RenamePro.Conversion;
 using RenamePro.Core;
+using RenamePro.Progress;
 using RenamePro.Watching;
 
 namespace RenamePro.Tray;
@@ -26,6 +27,9 @@ public sealed class TrayAppContext : ApplicationContext
 
     /// <summary>转换主流程（备份 + 转换 + 替换）。</summary>
     private readonly ConversionPipeline _pipeline;
+
+    /// <summary>进度聚合器（系统进度对话框 + 取消联动 + COM 降级 Toast 汇总）。</summary>
+    private readonly ProgressCoordinator _progress;
 
     /// <summary>图标资源流（Icon 不复制流数据，需保持到程序退出）。</summary>
     private readonly Stream _iconStream;
@@ -103,6 +107,10 @@ public sealed class TrayAppContext : ApplicationContext
         Log.Info("程序已启动，托盘常驻");
         _pipeline = new ConversionPipeline(_internalOps);
         _watcher = new RenameWatcher(_internalOps, _pipeline.Submit);
+        // 进度聚合：系统进度对话框 + 取消联动（Shell COM 失败自动降级为静默转换 + Toast 汇总）
+        _progress = new ProgressCoordinator(_pipeline, _shellMessageWindow.Handle, FlashTrayIcon);
+        // Toast 需要 AUMID 与开始菜单快捷方式，初始化放后台，不阻塞启动
+        Task.Run(ToastService.Initialize);
 
         // 开机自启动：未注册则自动注册（幂等，可能弹一次 UAC，失败不影响监听）
         EnsureStartupRegistration();
@@ -130,10 +138,16 @@ public sealed class TrayAppContext : ApplicationContext
         if (_exited) return;
         // 气泡提示：受系统通知设置/专注助手/远程桌面影响可能被静默收起，故叠加图标闪烁
         _trayIcon.ShowBalloonTip(3000, "RenamePro", "程序已在后台运行（系统托盘）", ToolTipIcon.Info);
-        // 托盘图标闪烁约 3 秒（8 拍 × 300ms）
+        FlashTrayIcon();
+        Log.Info("[托盘] 收到重复启动信号，气泡提示 + 托盘图标闪烁");
+    }
+
+    /// <summary>托盘图标闪烁约 3 秒（8 拍 × 300ms）；重复启动提示与降级提示共用。</summary>
+    private void FlashTrayIcon()
+    {
+        if (_exited) return;
         _flashTicks = 8;
         _flashTimer.Start();
-        Log.Info("[托盘] 收到重复启动信号，气泡提示 + 托盘图标闪烁");
     }
 
     /// <summary>闪烁节拍：交替切换图标形成闪烁，节拍归零后恢复正常图标。</summary>
@@ -206,6 +220,7 @@ public sealed class TrayAppContext : ApplicationContext
         _exited = true;
         Log.Info("程序退出");
         _watcher.Dispose();
+        _progress.Dispose();
         _pipeline.Dispose();
         _internalOps.Dispose();
         _shellMessageWindow.Dispose();

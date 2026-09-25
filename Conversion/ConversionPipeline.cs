@@ -19,14 +19,39 @@ public sealed class ConversionPipeline : IDisposable
     /// <summary>内部操作抑制表（替换前登记，防本程序自己触发的改名被再次转换）。</summary>
     private readonly InternalOpsSet _internalOps;
 
+    /// <summary>在飞任务的取消令牌（支持“取消当前任务”粒度）。</summary>
+    private readonly ConcurrentDictionary<ConversionTask, CancellationTokenSource> _activeTasks = new();
+
+    /// <summary>当前正在通道内执行的任务（“取消当前任务”定位用）。</summary>
+    private ConversionTask? _runningTask;
+
     /// <summary>ffmpeg 缺失的警告只记一次。</summary>
     private bool _avUnavailableLogged;
+
+    /// <summary>任务入队（分类完成，即将进入通道执行）。</summary>
+    public event Action<ConversionTask>? TaskEnqueued;
+
+    /// <summary>任务进度变化（百分比；-1 表示进度未知）。</summary>
+    public event Action<ConversionTask, int>? TaskProgressChanged;
+
+    /// <summary>任务结束（OK / FAILED / SKIPPED / CANCELLED）。</summary>
+    public event Action<ConversionTask, ConversionResult>? TaskFinished;
 
     /// <summary>
     /// 创建转换主流程。
     /// </summary>
     /// <param name="internalOps">内部操作抑制表（与监听器共用同一实例）</param>
     public ConversionPipeline(InternalOpsSet internalOps) => _internalOps = internalOps;
+
+    /// <summary>取消全部队列（进度对话框“取消”按钮调用）；取消后队列继续处理剩余任务。</summary>
+    public void CancelAll() => _scheduler.CancelAll();
+
+    /// <summary>取消当前正在执行的任务（其余任务继续）。</summary>
+    public void CancelCurrent()
+    {
+        var running = _runningTask;
+        if (running != null && _activeTasks.TryGetValue(running, out var cts)) cts.Cancel();
+    }
 
     /// <summary>
     /// 提交一次转换任务（防抖到期后由监听器回调，线程池线程）。
@@ -41,28 +66,49 @@ public sealed class ConversionPipeline : IDisposable
             Log.Info($"[结果] SKIPPED | 旧: {oldPath} | 新: {newPath} | 原因: 该路径正在处理中（防重入）");
             return;
         }
-        _ = RunSafeAsync(new ConversionTask(oldPath, newPath));
+        var task = new ConversionTask(oldPath, newPath);
+        var cts = new CancellationTokenSource();
+        _activeTasks[task] = cts;
+        _ = RunSafeAsync(task, cts);
     }
 
-    /// <summary>安全执行：统一兜底异常并移除防重入标记。</summary>
-    private async Task RunSafeAsync(ConversionTask task)
+    /// <summary>安全执行：统一兜底异常、清理防重入标记与取消令牌，并广播任务结束事件。</summary>
+    private async Task RunSafeAsync(ConversionTask task, CancellationTokenSource cts)
     {
         try
         {
-            await ProcessAsync(task).ConfigureAwait(false);
+            await ProcessAsync(task, cts.Token).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
+            task.Result = ConversionResult.Failed;
             Log.Error($"[结果] FAILED | 旧: {task.OldPath} | 新: {task.NewPath} | 错误: {ex.Message}");
         }
         finally
         {
             ProcessingPaths.TryRemove(task.NewPath, out _);
+            _activeTasks.TryRemove(task, out _);
+            var result = task.Result ?? ConversionResult.Failed;
+            Raise(() => TaskFinished?.Invoke(task, result));
+            cts.Dispose();
+        }
+    }
+
+    /// <summary>触发事件并吞掉订阅方异常（进度订阅方故障不能影响转换主流程）。</summary>
+    private static void Raise(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"进度事件处理异常：{ex.Message}");
         }
     }
 
     /// <summary>主流程：校验 → 探测分类 → 入队。</summary>
-    private async Task ProcessAsync(ConversionTask task)
+    private async Task ProcessAsync(ConversionTask task, CancellationToken taskToken)
     {
         // —— 特殊文件直接跳过 ——
         FileAttributes attributes;
@@ -112,14 +158,14 @@ public sealed class ConversionPipeline : IDisposable
             // 图片：< 2MB 进快速通道，其余进图片队列
             var size = IoRetry.Run("读取文件长度", () => new FileInfo(task.NewPath).Length);
             lane = size < 2L * 1024 * 1024 ? ConversionLane.Fast : ConversionLane.Image;
-            task.Progress = new QuarterProgress(task.Description);
-            body = ct => RunJobAsync(task,
+            task.Progress = new ProgressRelay(task, this);
+            body = ct => RunLaneBodyAsync(task, ct,
                 (temp, token) =>
                 {
                     // Magick 转换为同步 API，占用通道槽执行即可
                     ImageConverter.Convert(task, task.NewPath, temp, token);
                     return Task.CompletedTask;
-                }, ct);
+                });
         }
         else if (PathRules.IsAudioVideoExtension(task.NewExt))
         {
@@ -145,9 +191,9 @@ public sealed class ConversionPipeline : IDisposable
             }
             // 流拷贝进快速通道（秒级）；重编码进音视频队列（全局串行）
             lane = plan.Kind == AvPlanKind.StreamCopy ? ConversionLane.Fast : ConversionLane.AudioVideo;
-            task.Progress = new QuarterProgress(task.Description);
-            body = ct => RunJobAsync(task,
-                (temp, token) => AvConverter.ExecuteAsync(task, plan, probe, task.NewPath, temp, token), ct);
+            task.Progress = new ProgressRelay(task, this);
+            body = ct => RunLaneBodyAsync(task, ct,
+                (temp, token) => AvConverter.ExecuteAsync(task, plan, probe, task.NewPath, temp, token));
         }
         else
         {
@@ -156,7 +202,29 @@ public sealed class ConversionPipeline : IDisposable
         }
 
         Log.Info($"[入队] {task.Description} | 通道: {lane}");
-        await _scheduler.RunAsync(lane, body, CancellationToken.None).ConfigureAwait(false);
+        Raise(() => TaskEnqueued?.Invoke(task)); // 通知进度聚合（第 x 个 / 共 n 个）
+        await _scheduler.RunAsync(lane, body, taskToken).ConfigureAwait(false);
+        if (task.Result == null)
+        {
+            // 任务在等待通道槽期间被取消（未开始执行，因此没有副本）
+            task.Result = ConversionResult.Cancelled;
+            Log.Info($"[结果] CANCELLED | 旧: {task.OldPath} | 新: {task.NewPath} | 原因: 任务在开始前被取消");
+        }
+    }
+
+    /// <summary>通道任务体包装：登记“当前执行任务”（供取消当前任务定位）后委托给 RunJobAsync。</summary>
+    private async Task RunLaneBodyAsync(ConversionTask task, CancellationToken token,
+        Func<string, CancellationToken, Task> convertAsync)
+    {
+        _runningTask = task;
+        try
+        {
+            await RunJobAsync(task, convertAsync, token).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (ReferenceEquals(_runningTask, task)) _runningTask = null;
+        }
     }
 
     /// <summary>
@@ -167,6 +235,8 @@ public sealed class ConversionPipeline : IDisposable
     {
         string? backupPath = null;
         string? tempPath = null;
+        // 取消后不再开始新任务（连副本都不创建）
+        token.ThrowIfCancellationRequested();
         try
         {
             // ① 备份先行：把改名后的新文件原样字节复制为“原格式副本”（此刻内容仍是旧格式，复制即备份）
@@ -200,24 +270,30 @@ public sealed class ConversionPipeline : IDisposable
             }
 
             Log.Info($"[结果] OK | 旧: {task.OldPath} | 新: {task.NewPath} | 副本: {backupPath} | 耗时: {task.ElapsedSeconds:0.0}s");
+            task.Result = ConversionResult.Ok;
         }
         catch (OperationCanceledException)
         {
             // 取消：清理临时文件，副本保留
+            task.Result = ConversionResult.Cancelled;
             TryDelete(tempPath);
             Log.Info($"[结果] CANCELLED | 旧: {task.OldPath} | 新: {task.NewPath} | 副本保留: {backupPath}");
         }
         catch (Exception ex)
         {
             // 失败：删除临时文件并标记任务失败（默认保守策略：不回滚）
+            task.Result = ConversionResult.Failed;
             TryDelete(tempPath);
             Log.Error($"[结果] FAILED | 旧: {task.OldPath} | 新: {task.NewPath} | 副本: {backupPath} | 错误: {ex.Message}");
         }
     }
 
     /// <summary>记录一条 SKIPPED 结果日志。</summary>
-    private static void LogSkip(ConversionTask task, string reason) =>
+    private static void LogSkip(ConversionTask task, string reason)
+    {
+        task.Result = ConversionResult.Skipped;
         Log.Info($"[结果] SKIPPED | 旧: {task.OldPath} | 新: {task.NewPath} | 原因: {reason}");
+    }
 
     /// <summary>尽力删除临时文件（失败静默忽略，不影响结果判定）。</summary>
     private static void TryDelete(string? path)
@@ -269,6 +345,39 @@ public sealed class ConversionPipeline : IDisposable
             if (quarter <= _lastQuarter) return;
             _lastQuarter = quarter;
             Log.Info($"[进度] {_label} {value}%");
+        }
+    }
+
+    /// <summary>
+    /// 进度中继：既按 25% 档位写日志（里程碑 2 行为），又触发 TaskProgressChanged（里程碑 3 进度对话框）。
+    /// </summary>
+    private sealed class ProgressRelay : IProgress<int>
+    {
+        /// <summary>任务模型。</summary>
+        private readonly ConversionTask _task;
+
+        /// <summary>所属主流程（用于触发事件）。</summary>
+        private readonly ConversionPipeline _pipeline;
+
+        /// <summary>日志落地（M2 行为）。</summary>
+        private readonly QuarterProgress _logger;
+
+        /// <summary>创建进度中继。</summary>
+        /// <param name="task">任务模型</param>
+        /// <param name="pipeline">所属主流程</param>
+        public ProgressRelay(ConversionTask task, ConversionPipeline pipeline)
+        {
+            _task = task;
+            _pipeline = pipeline;
+            _logger = new QuarterProgress(task.Description);
+        }
+
+        /// <summary>上报进度：写日志 + 触发事件。</summary>
+        /// <param name="value">0~100，或 -1 表示进度未知</param>
+        public void Report(int value)
+        {
+            _logger.Report(value);
+            Raise(() => _pipeline.TaskProgressChanged?.Invoke(_task, value));
         }
     }
 }

@@ -55,6 +55,9 @@ public sealed class ConversionTask
     /// <summary>进度上报（百分比 0~100）；里程碑 2 接日志，里程碑 3 接进度对话框。</summary>
     public IProgress<int>? Progress { get; set; }
 
+    /// <summary>任务处理结果；null 表示尚未产生结论（进度聚合据此统计成功/失败/跳过/取消）。</summary>
+    public ConversionResult? Result { get; set; }
+
     /// <summary>状态文案：正在转换 a.jpg → a.png。</summary>
     public string Description =>
         $"正在转换 {Path.GetFileName(OldPath)} → {Path.GetFileName(NewPath)}";
