@@ -95,7 +95,7 @@ Windows 只改文件后缀并不会改变文件内容，改完常常得到一个
 资源管理器改后缀
         │
         ▼
-FileSystemWatcher.Renamed（9 个固定磁盘监听，仅文件名通知）
+FileSystemWatcher.Renamed（全部固定磁盘监听，可用 watchDrives 限定；仅文件名通知）
         │
         ├─ 内部操作抑制表命中？ → 丢弃（本程序自身引起的变更）
         ├─ 扩展名白名单（新旧后缀归一化后不同，且同属图片 / 音视频类别）
