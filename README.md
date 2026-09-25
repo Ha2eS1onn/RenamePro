@@ -1,5 +1,7 @@
 # RenamePro
 
+[English](README.en.md) | 简体中文
+
 在资源管理器里改文件后缀（例如 `a.jpg` 改成 `a.png`），程序在后台自动把文件内容真正转换成新格式的 Windows 托盘工具。
 
 它不新增右键菜单、不弹自定义主窗口、不出现控制台窗口：双击运行后只是一个托盘图标，之后完全跟随你在资源管理器里的改名动作工作。
@@ -247,6 +249,15 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode Image -Version 1.1.0
 | FFmpeg / ffprobe | 音视频转换与探测 | LGPL 或 GPL，取决于所使用构建的编译选项；本仓库不包含其二进制文件，分发时请遵守对应许可并注明来源 |
 | Microsoft.Windows.SDK.NET | WinRT Toast 投影 | 随 .NET 8 目标框架提供，无需额外 NuGet 包 |
 
-本仓库当前未附带开源许可文件（LICENSE）；如需以特定许可开源，请自行添加。使用本工具进行批量文件转换时，请自行确认对目标文件拥有处理权限。
+## 十三、开源许可
+
+本项目以 **GNU General Public License v3.0（GPL-3.0）** 发布，完整条款见仓库根目录的 [LICENSE](LICENSE)。
+
+- 你可以自由使用、修改与再分发本项目；分发衍生作品时必须同样以 GPL-3.0 授权并提供完整源代码；
+- 本仓库已包含全部源代码，满足 GPL-3.0 对源码提供的要求；
+- 发布包内的 `ffmpeg.exe` / `ffprobe.exe` 属于 FFmpeg 项目，其许可取决于具体构建（含 libx264 等组件的构建为 GPL）；分发时请一并遵守 FFmpeg 的许可要求并注明来源；
+- 图片转换使用的 Magick.NET / ImageMagick 以 Apache-2.0 与 ImageMagick License 发布，与本项目的 GPL-3.0 兼容。
+
+使用本工具进行批量文件转换时，请自行确认对目标文件拥有处理权限。
 
 
