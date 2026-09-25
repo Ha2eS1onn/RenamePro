@@ -128,3 +128,7 @@ Get-ChildItem $distDir -Filter '*.zip' | ForEach-Object {
 }
 Write-Host "提示：解压后双击 RenamePro.exe 即可使用（首次运行自动生成 config.json）。"
 
+# 7) 清理打包中间目录（含包内文件副本，约 900MB，可随时重新生成）
+Remove-Item $stageDir -Recurse -Force -ErrorAction SilentlyContinue
+Write-Host "已清理打包中间目录：$stageDir"
+
