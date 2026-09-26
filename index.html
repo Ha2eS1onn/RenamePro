@@ -295,9 +295,7 @@ summary::after {
 }
 details[open] > summary::after { content: "−"; }
 details p { max-width: 610px; padding: 0 24px 23px 0; color: var(--muted); font-size: 14px; line-height: 1.85; }
-@media (prefers-reduced-motion: no-preference) {
-  details[open] p { animation: answer-appears .2s ease-out; }
-}
+details[open] p { animation: answer-appears .2s ease-out; }
 @keyframes answer-appears { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
 
 /* ───────────────────────── download ───────────────────────── */
@@ -339,18 +337,16 @@ details p { max-width: 610px; padding: 0 24px 23px 0; color: var(--muted); font-
 .footer-note { flex-basis: 100%; text-align: right; margin-top: 9px; color: var(--muted); font-size: 11px; }
 
 /* ───────────────────────── micro animations ───────────────────────── */
-@media (prefers-reduced-motion: no-preference) {
-  .step-art g, .step-art [class] { transform-box: fill-box; transform-origin: center; }
-  .steps li:is(:hover, :focus-within) .s1-cursor { animation: cursor-moves var(--comic-beat) ease-in-out; }
-  .steps li:is(:hover, :focus-within) .s1-ext-old { animation: old-ext-out var(--comic-beat) ease-in-out; }
-  .steps li:is(:hover, :focus-within) .s1-ext-new { animation: new-ext-in var(--comic-beat) ease-in-out; }
-  .steps li:is(:hover, :focus-within) .s2-arrow { animation: convert-flies var(--comic-beat) ease-in-out; }
-  .steps li:is(:hover, :focus-within) .s2-gear { animation: gear-turns var(--comic-beat) ease-in-out; }
-  .steps li:is(:hover, :focus-within) .s3-fill { animation: bar-fills var(--comic-beat) ease-in-out; }
-  .steps li:is(:hover, :focus-within) .s3-check { animation: check-pops var(--comic-beat) ease-out; }
-  /* every scene ends back at its original pose */
-  .steps li:is(:hover, :focus-within) .step-art [class] { animation-fill-mode: both; }
-}
+.step-art g, .step-art [class] { transform-box: fill-box; transform-origin: center; }
+.steps li:is(:hover, :focus-within) .s1-cursor { animation: cursor-moves var(--comic-beat) ease-in-out; }
+.steps li:is(:hover, :focus-within) .s1-ext-old { animation: old-ext-out var(--comic-beat) ease-in-out; }
+.steps li:is(:hover, :focus-within) .s1-ext-new { animation: new-ext-in var(--comic-beat) ease-in-out; }
+.steps li:is(:hover, :focus-within) .s2-arrow { animation: convert-flies var(--comic-beat) ease-in-out; }
+.steps li:is(:hover, :focus-within) .s2-gear { animation: gear-turns var(--comic-beat) ease-in-out; }
+.steps li:is(:hover, :focus-within) .s3-fill { animation: bar-fills var(--comic-beat) ease-in-out; }
+.steps li:is(:hover, :focus-within) .s3-check { animation: check-pops var(--comic-beat) ease-out; }
+/* every scene ends back at its original pose */
+.steps li:is(:hover, :focus-within) .step-art [class] { animation-fill-mode: both; }
 @keyframes cursor-moves {
   0%, 10%, 60%, 100% { transform: none; }
   26% { transform: translate(-26px, -14px); }
@@ -477,14 +473,10 @@ details p { max-width: 610px; padding: 0 24px 23px 0; color: var(--muted); font-
   .steps h3 { font-size: 16px; }
 }
 
-/* ───────────────────────── reduced motion ───────────────────────── */
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  *, *::before, *::after { transition: none !important; animation: none !important; }
-  .js .reveal, .js .reveal-left, .js .reveal-right, .js .reveal-zoom { opacity: 1; transform: none; }
-  .js .highlight::after { transform: rotate(-2deg) scaleX(1); }
-  .button, .button svg { transform: none !important; }
-}
+/* ───────────────────────── reduced motion ─────────────────────────
+   Motion policy: animations play by default on every OS and browser, so the
+   scroll entrances look the same everywhere. The footer “reduce motion”
+   switch is the only thing that turns motion off (html[data-reduced-motion]). */
 html[data-reduced-motion] { scroll-behavior: auto; }
 html[data-reduced-motion] *, html[data-reduced-motion] *::before, html[data-reduced-motion] *::after {
   animation: none !important; transition: none !important;
@@ -1039,10 +1031,10 @@ html[data-reduced-motion] :is(.button, .button svg) { transform: none !important
     <summary><span lang="en">Display settings</span><span lang="zh-CN">显示设置</span></summary>
     <label>
       <input type="checkbox" id="reduce-motion">
-      <span lang="en">Reduce motion — turn off decorative animations</span>
-      <span lang="zh-CN">减少动画——关闭装饰性动画效果</span>
+      <span lang="en">Reduce motion — turn off all animations</span>
+      <span lang="zh-CN">减少动画——关闭全站动画效果</span>
     </label>
-    <p><span lang="en">Your system “reduce motion” preference is always respected; this switch forces animations off everywhere.</span><span lang="zh-CN">系统“减少动态效果”偏好始终生效；此开关可强制全站关闭动画。</span></p>
+    <p><span lang="en">Entrance and decorative animations play by default; this switch turns them all off and the choice is remembered in this browser — the OS “reduce motion” setting no longer changes this page.</span><span lang="zh-CN">滚动入场与装饰动画默认播放；勾选后全站关闭，选择记在本浏览器——不再跟随操作系统的“减少动态效果”。</span></p>
   </details>
 
   <p class="footer-note reveal">
