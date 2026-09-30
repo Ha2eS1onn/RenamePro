@@ -85,14 +85,75 @@ public static class AvConverter
         [".wmv"] = new(StringComparer.Ordinal) { "wmv3", "vc1", "wmav2", "wmapro" }
     };
 
-    /// <summary>ffmpeg.exe 完整路径（程序同目录）。</summary>
-    public static string FfmpegPath => Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
+    /// <summary>载荷目录（惰性解压）。首次访问会触发把内置的 ffmpeg 载荷解压到用户可写目录。</summary>
+    private static string PayloadDirectory => RuntimePayload.EnsureAvailable();
 
-    /// <summary>ffprobe.exe 完整路径（程序同目录）。</summary>
-    public static string FfprobePath => Path.Combine(AppContext.BaseDirectory, "ffprobe.exe");
+    /// <summary>ffmpeg.exe 完整路径（载荷目录内；开发期即程序目录）。</summary>
+    public static string FfmpegPath => Path.Combine(PayloadDirectory, "ffmpeg.exe");
 
-    /// <summary>ffmpeg / ffprobe 是否可用。</summary>
-    public static bool IsAvailable => File.Exists(FfmpegPath) && File.Exists(FfprobePath);
+    /// <summary>ffprobe.exe 完整路径（载荷目录内；开发期即程序目录）。</summary>
+    public static string FfprobePath => Path.Combine(PayloadDirectory, "ffprobe.exe");
+
+    /// <summary>
+    /// ffmpeg / ffprobe 是否可用（不触发解压，只反映"此刻是否已就绪"）。
+    /// 真正的可用性判断请用 <see cref="TryCheckAvailable"/>。
+    /// </summary>
+    public static bool IsAvailable => RuntimePayload.TryGetCachedDirectory(out _);
+
+    /// <summary>
+    /// 可用性自检：载荷能解压出来、两个 exe 都在，且 ffmpeg 真能起来。
+    /// 只用 File.Exists 判断不出「缺少运行时 DLL」这类问题——那样要等到第一次转换才暴露，
+    /// 这里提前发现，并把原因带回给调用方写日志。
+    /// </summary>
+    /// <param name="error">不可用的原因（可用时为 null）</param>
+    public static bool TryCheckAvailable(out string? error)
+    {
+        string directory;
+        try
+        {
+            directory = PayloadDirectory;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+
+        var ffmpeg = Path.Combine(directory, "ffmpeg.exe");
+        var ffprobe = Path.Combine(directory, "ffprobe.exe");
+        if (!File.Exists(ffmpeg)) { error = $"载荷目录缺少 ffmpeg.exe（{directory}）"; return false; }
+        if (!File.Exists(ffprobe)) { error = $"载荷目录缺少 ffprobe.exe（{directory}）"; return false; }
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = ffmpeg,
+                Arguments = "-hide_banner -version",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            using var process = Process.Start(startInfo);
+            if (process == null) { error = "ffmpeg 无法启动"; return false; }
+            var stdout = process.StandardOutput.ReadToEnd();
+            var stderr = process.StandardError.ReadToEnd();
+            process.WaitForExit();
+            if (process.ExitCode != 0)
+            {
+                // 最常见的形态：0xC0000135，同目录缺运行时 DLL（libx264/libvpx/libiconv 等）
+                error = $"ffmpeg 启动失败（退出码 0x{process.ExitCode:X8}）：{stderr.Trim()}";
+                return false;
+            }
+            error = null;
+            return stdout.Length > 0;
+        }
+        catch (Exception ex)
+        {
+            error = $"ffmpeg 自检异常：{ex.Message}";
+            return false;
+        }
+    }
 
     /// <summary>
     /// 用 ffprobe 探测流编码与总时长。

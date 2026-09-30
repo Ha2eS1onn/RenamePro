@@ -191,15 +191,18 @@ public sealed class ConversionPipeline : IDisposable
         }
         else if (PathRules.IsAudioVideoExtension(task.NewExt))
         {
-            // ffmpeg 缺失：仅禁用音视频功能，图片不受影响
-            if (!AvConverter.IsAvailable)
+            // ffmpeg 不可用（载荷解压失败 / 目录不可写 / 载荷缺文件）：仅禁用音视频功能，图片不受影响
+            if (!AvConverter.TryCheckAvailable(out var avError))
             {
                 if (!_avUnavailableLogged)
                 {
-                    Log.Warn("ffmpeg.exe / ffprobe.exe 缺失，音视频转换功能已禁用（图片功能不受影响）");
+                    Log.Warn($"音视频转换已禁用（图片功能不受影响）：{avError}");
+                    Log.Warn("  常见原因：内置 FFmpeg 载荷解压失败（用户目录或临时目录均不可写）、" +
+                             "杀软拦截了解压出的 DLL，或开发者自备的 ffmpeg 缺运行时 DLL；" +
+                             "详见 README 的「单文件是怎么做到的」一节");
                     _avUnavailableLogged = true;
                 }
-                LogSkip(task, "ffmpeg.exe 缺失，音视频转换已禁用");
+                LogSkip(task, $"音视频转换已禁用：{avError}");
                 return;
             }
 

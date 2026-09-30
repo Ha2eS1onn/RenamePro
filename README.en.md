@@ -87,9 +87,74 @@ Changing a file extension on Windows does not change the file contents, so you o
 | System integration | Shell COM `IOperationsProgressDialog` (hand-written interop including `IShellItem`), WinRT Toast (`Windows.UI.Notifications`), Task Scheduler (`schtasks`), named mutex, Explorer broadcast message `TaskbarCreated`, Shell property store (writing the AUMID), child processes |
 | Concurrency | `Task` plus `SemaphoreSlim` lane queues, `CancellationTokenSource` cancellation, a dedicated STA message thread for marshalling, `ConcurrentDictionary` for the re-entry guard and the suppression table |
 | Configuration and logging | `System.Text.Json` (tolerant parsing that allows comments and trailing commas) and a thread-safe append-only log |
-| Packaging | Single-file self-contained publish (ReadyToRun disabled, PublishTrim not used) driven by a PowerShell packaging script that produces green ZIP archives |
+| Packaging | Single-file self-contained publish (in-bundle compression enabled, ReadyToRun disabled, PublishTrim not used) driven by a PowerShell packaging script that produces green ZIP archives |
 
 Design constraints: `PublishTrim` is never used (it breaks COM interop and reflection paths), `ReadyToRun` is disabled (it doubles the output size) and no third-party package other than Magick.NET is referenced.
+
+### Release size breakdown (measured)
+
+`RenamePro.csproj` strips WPF, designer and debug-symbol assemblies at publish time and `EnableCompressionInSingleFile` deflates the bundle contents; FFmpeg is a trimmed build compiled by this project and **embedded into the executable** (see below).
+
+| Artifact | Size | Notes |
+| --- | --- | --- |
+| `RenamePro.exe` (full) | 83.1 MB | carries a 13.4 MB embedded FFmpeg payload; the runtime, WinForms and the native Magick.NET libraries all live inside |
+| `RenamePro-Full-*.zip` | 77.5 MB | **contains only `RenamePro.exe` + the readme**, with full image and audio/video support |
+| `RenamePro.exe` (image-only) | 69.7 MB | no FFmpeg payload; audio/video renames are logged and skipped |
+| `RenamePro-Image-*.zip` | 64.2 MB | likewise only the executable + the readme |
+| `ffmpeg\` folder (local build input) | 34.4 MB | 2 executables + 10 runtime DLLs; it was the official essentials build before (201 MB for the two executables) |
+| Repository sources and icon | about 350 KB | binaries, DLLs, payload and packaging output are never committed |
+
+The cost of in-bundle compression is the **first launch**, which extracts the bundle into `%TEMP%\.net\RenamePro\<hash>\` (once per version, then the cache is reused): measured cold start is about 1.3-1.9 s and a warm start about 30 ms. To opt out, remove `EnableCompressionInSingleFile` from `RenamePro.csproj` and you are back to an uncompressed single file.
+
+### How a single file is possible (the FFmpeg payload)
+
+The full package unpacks to a single `RenamePro.exe`. FFmpeg is not compiled in; it travels like this:
+
+1. `publish.ps1` compresses everything in `ffmpeg\` (2 executables + 10 DLLs) into **one** `Assets\ffmpeg-payload.zip` (about 13.4 MB);
+2. that ZIP is written into the assembly at **compile time** as an `EmbeddedResource` (the C# compiler handles this, independently of the single-file bundler, so no `ExcludeFromSingleFile` is involved);
+3. at runtime [RuntimePayload.cs](Conversion/RuntimePayload.cs:1) lazily extracts it **on the first audio/video conversion** into
+   ```
+   %LOCALAPPDATA%\RenamePro\runtime\<payload-id>\
+   ```
+   where the payload id is the first 16 hex digits of the payload's SHA256, so upgrading FFmpeg switches directory and the old one is cleaned up in the background;
+4. [AvConverter](Conversion/AvConverter.cs:88) invokes `ffmpeg.exe` / `ffprobe.exe` from that directory.
+
+**Why it has to touch the disk**: the Windows loader only loads modules from disk paths. `ffmpeg.exe` is a child process started with `CreateProcess`, and the 10 DLLs it needs are located by the loader in the executable's own directory; embedded resources are invisible to the loader. "Not a single file on disk" is impossible on Windows — "the user receives a single file" is not.
+
+Measured behaviour:
+
+- extracting the 34.4 MB payload takes **about 150 ms** (once per payload, reused from then on);
+- extraction happens on the **first audio/video conversion**, never on the startup path: image-only users never extract anything, and tray startup matches the image-only build;
+- if the preferred directory is not writable the payload falls back to `%TEMP%\RenamePro\runtime\<payload-id>\`;
+- if both fail, or a security product quarantines an extracted DLL, audio/video is disabled with the reason written to `log.txt`, and **image conversion is unaffected**;
+- when `ffmpeg.exe` / `ffprobe.exe` sit next to the executable (a developer `dotnet build` output directory) they are used directly and nothing is extracted.
+
+> The full and image-only builds must be **two separate publishes**: the payload is embedded at compile time, so one publish can never be both. `publish.ps1 -Mode Both` already does this in order (full build with the payload, then the payload is moved aside for the image-only build).
+
+### Trimmed FFmpeg (`build-ffmpeg.ps1`)
+
+Official builds (gyan.dev essentials / full, BtbN) carry a large amount of components and every hardware-acceleration entry this program never calls: the two executables unpack to 201 MB, while the project only needs
+
+- encoders: `libx264` `aac` `libmp3lame` `libvorbis` `libopus` `libvpx-vp9` `flac` `pcm_s16le` `wmv2` `wmav2` `mpeg4`
+- containers: mp4/mov/m4a, mkv, webm, avi, wmv(asf), flv, ts, ogg, mp3, wav, flac
+- probing: `ffprobe -show_entries stream=codec_type,codec_name / format=duration -of json`
+
+So [build-ffmpeg.ps1](build-ffmpeg.ps1:1) runs `--disable-everything` and whitelists exactly those; the result is **12.8 MB / 12.6 MB** plus 10 runtime DLLs. The DLLs are required because the UCRT64 x264/lame/opus/vorbis/vpx/iconv/zlib libraries are linked through import libraries (`-Wl,-Bstatic` cannot reach those positions in FFmpeg's link line), so they must sit next to the executables or the binary fails silently with exit code `0xC0000135`.
+
+After changing the whitelist you **must** run the verifier. It covers 81 checks (55 media capability and conversion smoke checks + 26 payload consistency checks):
+
+```powershell
+winget install --id MSYS2.MSYS2 -e            # one-off: install MSYS2
+# install the toolchain inside the MSYS2 UCRT64 shell (the command is printed by build-ffmpeg.ps1 on failure)
+powershell -ExecutionPolicy Bypass -File build-ffmpeg.ps1 -Proxy http://127.0.0.1:7897   # 20-40 minutes
+powershell -ExecutionPolicy Bypass -File verify-ffmpeg.ps1                # verify the ffmpeg\ folder
+powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode Both           # build the payload and package
+powershell -ExecutionPolicy Bypass -File verify-ffmpeg.ps1 -FromPayload   # verify the payload that gets embedded
+```
+
+`-FromPayload` unpacks `Assets\ffmpeg-payload.zip`, runs every media check against it and asserts that the payload's file list and SHA256 hashes match the `ffmpeg\` folder exactly. That is the guard against "edited `ffmpeg\` but forgot to regenerate the payload".
+
+Upgrading FFmpeg is just `build-ffmpeg.ps1 -Version <x.y.z>`: it re-clones that tag and reuses the whitelist. Always re-run both verification steps before packaging a new version.
 
 ## 4. How It Works
 
@@ -129,14 +194,17 @@ RenamePro/
 ├── Assets/                Application icon (used both as the exe icon and as an embedded resource)
 ├── Core/                  Configuration, logging, path rules, file-header sniffing, IO retry, autostart, single instance
 ├── Watching/              FileSystemWatcher wrapper, 300 ms debounce scheduler
-├── Conversion/            Pipeline, tiered scheduler, backup manager, image converter, audio/video converter
+├── Conversion/            Pipeline, tiered scheduler, backup manager, image converter, audio/video converter, payload manager
 ├── Interop/               Shell COM progress dialog declarations and wrapper, IShellItem / AUMID helpers
 ├── Progress/              Progress coordinator, dedicated STA message thread, Toast service
 ├── Tray/                  Tray application context, Shell broadcast message window
-├── ffmpeg/                ffmpeg.exe and ffprobe.exe (large, not tracked in the repository)
+├── ffmpeg/                ffmpeg.exe, ffprobe.exe and 10 runtime DLLs (build input, not tracked)
+├── Assets/ffmpeg-payload.zip  Those files compressed into one payload (build artifact, untracked, embedded at compile time)
 ├── app.manifest           Windows 10/11 compatibility declaration and DPI settings
-├── RenamePro.csproj       Project file (includes a publish-time size optimization target)
-└── publish.ps1            Portable packaging script
+├── RenamePro.csproj       Project file (size target, payload embedding, dev-time ffmpeg copy rules)
+├── build-ffmpeg.ps1       Trimmed FFmpeg build script (whitelist configure + runtime DLLs)
+├── verify-ffmpeg.ps1      FFmpeg verifier (55 capability and conversion smoke checks + 26 payload consistency checks)
+└── publish.ps1            Portable packaging script (payload, two publishes, ZIP archives)
 ```
 
 ## 6. Getting Started
@@ -144,13 +212,15 @@ RenamePro/
 ### Option 1: Use a release package (recommended)
 
 1. Download from the Releases page:
-   - `RenamePro-Full-*.zip`: includes FFmpeg, full image and audio/video support;
+   - `RenamePro-Full-*.zip`: FFmpeg embedded, full image and audio/video support;
    - `RenamePro-Image-*.zip`: smallest package, image conversion only; audio/video renames are skipped with a log entry;
-2. Unzip anywhere and double-click `RenamePro.exe`: no window appears, only a tray icon;
+2. Unzip anywhere: the folder contains **a single `RenamePro.exe`** (plus the readme); double-click it and only a tray icon appears;
 3. Rename files in File Explorer as usual, for example `photo.jpg` to `photo.png`;
 4. Tray icon context menu: pause/resume watching, autostart at logon, reload configuration, exit.
 
 The first run creates `config.json` and `log.txt` next to the executable. Registering the autostart task raises a single UAC prompt; accepting it is enough.
+
+The first audio/video conversion in the full build extracts the embedded FFmpeg into `%LOCALAPPDATA%\RenamePro\runtime\` (about 150 ms, once); image-only usage never triggers it.
 
 ### Option 2: Build from source
 
@@ -158,7 +228,8 @@ The first run creates `config.json` and `log.txt` next to the executable. Regist
 # Requirements: .NET 8 SDK, Windows 10/11 x64
 git clone https://github.com/Ha2eS1onn/RenamePro.git
 cd RenamePro
-# Put ffmpeg.exe and ffprobe.exe into the ffmpeg\ folder (not tracked, required for audio/video support)
+# Audio/video support needs FFmpeg: build the trimmed one with build-ffmpeg.ps1 (recommended),
+# or drop any ffmpeg.exe / ffprobe.exe (plus their DLLs) into the ffmpeg\ folder
 dotnet build RenamePro.csproj -c Debug
 ```
 
@@ -170,6 +241,8 @@ powershell -ExecutionPolicy Bypass -File publish.ps1
 # Build a single package, or set a version number
 powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode Image -Version 1.1.0
 ```
+
+> Both scripts are saved as UTF-8; when running them with `powershell.exe` (Windows PowerShell 5.1) make sure they are decoded as UTF-8, otherwise their non-ASCII comments are read as ANSI and the parser reports syntax errors (the scripts in this repository ship with a BOM, so this normally does not happen). PowerShell 7 is unaffected.
 
 ## 7. Configuration (config.json)
 
@@ -247,7 +320,8 @@ The project was built in four milestones, each with its own commit and hands-on 
 | Component | Purpose | License notes |
 | --- | --- | --- |
 | Magick.NET / ImageMagick | Image format conversion | Apache-2.0 and the ImageMagick License (see the upstream repositories) |
-| FFmpeg / ffprobe | Audio/video conversion and probing | LGPL or GPL depending on the build options actually used; this repository does not contain the binaries, and redistributing them requires complying with their license and attributing the source |
+| FFmpeg / ffprobe | Audio/video conversion and probing | GPL (any build containing libx264 is GPL); this repository does not contain the binaries, and the two executables in the release packages are compiled by [build-ffmpeg.ps1](build-ffmpeg.ps1:1) with `--enable-gpl` from a pinned tag, so the source and configure switches are reproducible; redistributing them requires complying with that license and attributing the source |
+| Bundled runtime DLLs | x264 / lame / opus / vorbis / libvpx / libogg / libiconv / zlib / winpthread | Each follows its upstream license (GPL / LGPL / BSD and others); together with the two executables they are compressed into the payload embedded in the full build, extracted to the user directory at runtime, and are not tracked |
 | Microsoft.Windows.SDK.NET | WinRT Toast projection | Provided by the .NET 8 target framework, no extra NuGet package required |
 
 ## 13. License

@@ -87,9 +87,74 @@ Windows 只改文件后缀并不会改变文件内容，改完常常得到一个
 | 系统集成 | Shell COM `IOperationsProgressDialog`（手写 Interop，含 `IShellItem`）、WinRT Toast（`Windows.UI.Notifications`）、任务计划程序（`schtasks`）、命名互斥体、Explorer 广播消息 `TaskbarCreated`、Shell 属性存储（写入 AUMID）、`CreateProcess` 风格的子进程调用 |
 | 并发模型 | `Task` + `SemaphoreSlim` 分级队列、`CancellationTokenSource` 取消、专用 STA 消息线程封送、`ConcurrentDictionary` 防重入与抑制表 |
 | 配置与日志 | `System.Text.Json`（允许注释与尾逗号的宽容解析）、线程安全追加式日志 |
-| 打包 | 单文件自包含发布（关闭 ReadyToRun、不使用 PublishTrim）+ PowerShell 打包脚本，产物为绿色 zip |
+| 打包 | 单文件自包含发布（开启单文件内压缩、关闭 ReadyToRun、不使用 PublishTrim）+ PowerShell 打包脚本，产物为绿色 zip |
 
 设计约束：不使用 `PublishTrim`（会破坏 COM Interop 与反射路径），不使用 `ReadyToRun`（体积翻倍），除 Magick.NET 之外不引入任何第三方包。
+
+### 发布体积构成（实测）
+
+`RenamePro.csproj` 在发布期剔除 WPF / 设计器 / 调试符号程序集，`EnableCompressionInSingleFile` 对单文件包内做 deflate；FFmpeg 为项目自行精简编译并**内置进 exe**（见下）。
+
+| 产物 | 体积 | 说明 |
+| --- | --- | --- |
+| `RenamePro.exe`（完整版） | 83.1 MB | 含 13.4 MB 内置 FFmpeg 载荷；运行时、WinForms、Magick.NET 原生库全在其中 |
+| `RenamePro-完整版-*.zip` | 77.5 MB | **包内只有 `RenamePro.exe` + 使用说明**，图片与音视频功能齐全 |
+| `RenamePro.exe`（图片版） | 69.7 MB | 不嵌入 FFmpeg 载荷，音视频改名写日志跳过 |
+| `RenamePro-图片版-*.zip` | 64.2 MB | 同样只有 exe + 使用说明 |
+| `ffmpeg\` 目录（本地构建源） | 34.4 MB | 2 个 exe + 10 个运行时 DLL；精简编译前是官方 essentials 构建，两个 exe 合计 201 MB |
+| 仓库源码 + 图标 | 约 350 KB | 二进制、DLL、载荷与打包产物均不入库 |
+
+开启单文件压缩的代价是**首次启动**要把包内文件解压到 `%TEMP%\.net\RenamePro\<hash>\`（同一版本只解压一次，之后直接复用缓存）：实测冷启动约 1.3～1.9 秒，热启动约 30 毫秒。不想承担这个首启代价时，删掉 `RenamePro.csproj` 里的 `EnableCompressionInSingleFile` 即可回到未压缩单文件。
+
+### 单文件是怎么做到的（FFmpeg 载荷）
+
+完整版发布包解压后只有一个 `RenamePro.exe`。ffmpeg 并没有被编译进去，而是这样交付：
+
+1. `publish.ps1` 把 `ffmpeg\` 下全部文件（2 个 exe + 10 个 DLL）压成**一个** `Assets\ffmpeg-payload.zip`（约 13.4 MB）；
+2. 该 zip 以 `EmbeddedResource` 形式在**编译期**写进程序集（`EmbeddedResource` 由 C# 编译器处理，与单文件打包器无关，所以不需要 `ExcludeFromSingleFile`）；
+3. 运行时由 [RuntimePayload.cs](Conversion/RuntimePayload.cs:1) 在**首次需要音视频转换时**惰性解压到：
+   ```
+   %LOCALAPPDATA%\RenamePro\runtime\<载荷ID>\
+   ```
+   载荷 ID 是载荷字节的 SHA256 前 16 位，因此升级 FFmpeg 会自动换目录，旧目录随后被后台清理；
+4. [AvConverter](Conversion/AvConverter.cs:88) 从该目录调用 `ffmpeg.exe` / `ffprobe.exe`。
+
+**为什么必须落盘**：Windows 加载器只按磁盘路径加载模块。`ffmpeg.exe` 是 `CreateProcess` 启动的子进程，它依赖的 10 个 DLL 要由加载器在 exe 同目录搜索，程序集里的嵌入资源对加载器不可见——"一个文件都不落盘"在 Windows 上做不到，能做到的是"用户只拿到一个文件"。
+
+实测行为：
+
+- 解压 34.4 MB 载荷耗时 **约 150 ms**（同一版本只解一次，之后每次启动直接复用）；
+- 解压发生在**第一次音视频转换**时，不在启动路径上：只做图片转换的用户永远不会解压，托盘启动耗时与图片版一致；
+- 首选目录不可写（受限环境）时自动退回 `%TEMP%\RenamePro\runtime\<载荷ID>\`；
+- 两者都失败、或 DLL 被安全软件拦截时，音视频功能被禁用并把原因写进 `log.txt`，**图片转换不受影响**；
+- 程序目录里放了 ffmpeg.exe / ffprobe.exe 时（开发期 `dotnet build` 的输出目录），直接用程序目录，不走解压。
+
+> 完整版与图片版必须是**两次独立发布**：载荷在编译期嵌入，同一次发布的产物不可能既带又不带它。`publish.ps1 -Mode Both` 已经按这个顺序做（先带载荷出完整版，再把载荷临时移开出图片版）。
+
+### 精简版 FFmpeg（`build-ffmpeg.ps1`）
+
+官方构建（gyan.dev essentials / full、BtbN）都带有本程序用不到的大量组件与全部硬件加速入口，两个 exe 解出来就是 201 MB，而本项目只用到：
+
+- 编码器：`libx264` `aac` `libmp3lame` `libvorbis` `libopus` `libvpx-vp9` `flac` `pcm_s16le` `wmv2` `wmav2` `mpeg4`
+- 容器：mp4/mov/m4a、mkv、webm、avi、wmv(asf)、flv、ts、ogg、mp3、wav、flac
+- 探测：`ffprobe -show_entries stream=codec_type,codec_name / format=duration -of json`
+
+所以 [build-ffmpeg.ps1](build-ffmpeg.ps1:1) 用 `--disable-everything` 做白名单，只编这些；产物 **12.8 MB / 12.6 MB**，配套 10 个运行时 DLL。之所以要带 DLL，是因为 UCRT64 的 x264/lame/opus/vorbis/vpx/iconv/zlib 走的是导入库（`-Wl,-Bstatic` 在 FFmpeg 的链接行里控制不到这些位置），exe 旁边必须放齐，否则会静默失败（退出码 `0xC0000135`）。
+
+改了白名单后**必须**跑校验脚本。它覆盖 81 项检查（55 项媒体能力与转换冒烟 + 26 项载荷一致性）：
+
+```powershell
+winget install --id MSYS2.MSYS2 -e            # 一次性：装 MSYS2
+# 在 MSYS2 UCRT64 里装工具链（命令见 build-ffmpeg.ps1 报错提示）
+powershell -ExecutionPolicy Bypass -File build-ffmpeg.ps1 -Proxy http://127.0.0.1:7897   # 20~40 分钟
+powershell -ExecutionPolicy Bypass -File verify-ffmpeg.ps1            # 校验 ffmpeg\ 目录
+powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode Both       # 生成载荷并打包
+powershell -ExecutionPolicy Bypass -File verify-ffmpeg.ps1 -FromPayload   # 校验会被嵌入的那份载荷
+```
+
+`-FromPayload` 会解包 `Assets\ffmpeg-payload.zip`，对它跑全部媒体检查，并核对载荷与 `ffmpeg\` 目录的文件清单和 SHA256 完全一致——这是防止"改了 ffmpeg\ 却忘了重新生成载荷"的关键一步。
+
+升级 FFmpeg 版本只需改 `build-ffmpeg.ps1 -Version`，它会重新克隆对应标签并复用白名单；换版本后必须按上面的顺序重新校验并打包。
 
 ## 四、工作原理
 
@@ -128,14 +193,17 @@ RenamePro/
 ├── Assets/                应用图标（同时作为 exe 图标与嵌入资源）
 ├── Core/                  配置、日志、路径判定、文件头嗅探、IO 重试、开机自启、单实例
 ├── Watching/              FileSystemWatcher 监听封装、300ms 防抖调度
-├── Conversion/            转换主流程、分级调度队列、备份管理器、图片转换器、音视频转换器
+├── Conversion/            转换主流程、分级调度队列、备份管理器、图片转换器、音视频转换器、FFmpeg 载荷管理
 ├── Interop/               Shell COM 进度对话框声明与包装、IShellItem / AUMID 辅助
 ├── Progress/              进度聚合器、专用 STA 消息线程、Toast 通知服务
 ├── Tray/                  托盘上下文、Shell 广播消息窗口（通知区重建）
-├── ffmpeg/                ffmpeg.exe 与 ffprobe.exe（体积大，未纳入版本库）
+├── ffmpeg/                ffmpeg.exe、ffprobe.exe 与 10 个运行时 DLL（构建源，未纳入版本库）
+├── Assets/ffmpeg-payload.zip  上述文件压成的单个载荷（构建产物，不入库，编译期嵌入 exe）
 ├── app.manifest           Win10/11 兼容性声明与 DPI 设置
-├── RenamePro.csproj       项目文件（含发布期体积优化目标）
-└── publish.ps1            便携打包脚本
+├── RenamePro.csproj       项目文件（体积优化目标、载荷嵌入、开发期 ffmpeg 复制规则）
+├── build-ffmpeg.ps1       精简版 FFmpeg 构建脚本（白名单 configure + 复制运行时 DLL）
+├── verify-ffmpeg.ps1      FFmpeg 校验脚本（55 项能力与转换冒烟 + 26 项载荷一致性）
+└── publish.ps1            便携打包脚本（生成载荷、两次发布、打 zip）
 ```
 
 ## 六、快速开始
@@ -143,13 +211,15 @@ RenamePro/
 ### 方式一：使用发布包（推荐）
 
 1. 到 Releases 页面下载：
-   - `RenamePro-Full-*.zip`（完整版）：含 FFmpeg，图片与音视频功能齐全；
+   - `RenamePro-Full-*.zip`（完整版）：内置 FFmpeg，图片与音视频功能齐全；
    - `RenamePro-Image-*.zip`（图片版）：体积最小，仅图片转换，音视频改名会写日志跳过；
-2. 解压任意目录，双击 `RenamePro.exe`：无窗口，托盘出现图标；
+2. 解压任意目录：**里面只有一个 `RenamePro.exe`**（外加使用说明），双击即可——无窗口，托盘出现图标；
 3. 在资源管理器里改文件后缀即可，例如 `photo.jpg` 改为 `photo.png`；
 4. 托盘图标右键菜单：暂停监听 / 继续监听、开机自启动、重新加载配置、退出。
 
 首次运行会在程序目录生成 `config.json`（带中文注释）与 `log.txt`。首次勾选"开机自启动"或程序自动注册自启动时会弹一次 UAC，允许即可。
+
+完整版第一次做音视频转换时，会把内置的 FFmpeg 解压到 `%LOCALAPPDATA%\RenamePro\runtime\`（约 150 毫秒，只此一次），这是正常行为；只做图片转换不会触发。
 
 ### 方式二：从源码构建
 
@@ -157,7 +227,8 @@ RenamePro/
 # 环境要求：.NET 8 SDK、Windows 10/11 x64
 git clone https://github.com/Ha2eS1onn/RenamePro.git
 cd RenamePro
-# 把 ffmpeg.exe 与 ffprobe.exe 放入 ffmpeg\ 目录（不入库，用于音视频功能）
+# 音视频功能需要 ffmpeg：用 build-ffmpeg.ps1 自己编精简版（推荐），
+# 或把任意 ffmpeg.exe / ffprobe.exe（含所需 DLL）放进 ffmpeg\ 目录
 dotnet build RenamePro.csproj -c Debug
 ```
 
@@ -169,6 +240,8 @@ powershell -ExecutionPolicy Bypass -File publish.ps1
 # 只出某一个包 / 指定版本号
 powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode Image -Version 1.1.0
 ```
+
+> 这两个脚本都以 UTF-8 保存；用 `powershell.exe`（Windows PowerShell 5.1）执行时请确认脚本按 UTF-8 解码，否则其中的中文注释会被当作 ANSI 而报语法错误（仓库内脚本已带 BOM，正常情况无此问题）。用 PowerShell 7 执行不受影响。
 
 ## 七、配置说明（config.json）
 
@@ -246,7 +319,8 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode Image -Version 1.1.0
 | 组件 | 用途 | 许可说明 |
 | --- | --- | --- |
 | Magick.NET / ImageMagick | 图片格式转换 | Apache-2.0 与 ImageMagick License（详见其官方仓库） |
-| FFmpeg / ffprobe | 音视频转换与探测 | LGPL 或 GPL，取决于所使用构建的编译选项；本仓库不包含其二进制文件，分发时请遵守对应许可并注明来源 |
+| FFmpeg / ffprobe | 音视频转换与探测 | GPL（含 libx264 的构建即为 GPL）；本仓库不包含其二进制文件，发布包内的两个 exe 由 [build-ffmpeg.ps1](build-ffmpeg.ps1:1) 以 `--enable-gpl` 自行精简编译，源码与编译开关可复现，分发时请遵守对应许可并注明来源 |
+| 随包运行时 DLL | x264 / lame / opus / vorbis / libvpx / libogg / libiconv / zlib / winpthread | 各自遵循其上游许可（GPL / LGPL / BSD 等）；它们与两个 exe 一起被压成载荷嵌入完整版 exe，运行时解压到用户目录，未纳入版本库 |
 | Microsoft.Windows.SDK.NET | WinRT Toast 投影 | 随 .NET 8 目标框架提供，无需额外 NuGet 包 |
 
 ## 十三、开源许可
