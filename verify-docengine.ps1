@@ -234,11 +234,18 @@ $env:TEMP = Join-Path $root 'obj\temp'
 $env:TMP = $env:TEMP
 New-Item -ItemType Directory -Force -Path $env:TEMP | Out-Null
 Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', "`"$ExePath`"" -WorkingDirectory $appDir -WindowStyle Hidden
-Start-Sleep -Seconds 4
 
 function Get-LogText {
     if (-not (Test-Path $logPath)) { return '' }
     return (Get-Content $logPath -Raw -Encoding UTF8)
+}
+
+# 等托盘程序写出第一行日志。不用固定睡眠：单文件 exe 首次启动要先把自己的 bundle 解压出来
+# （冷启动 1~2 秒），刚解压出来的 700 MB 引擎目录还可能被安全软件全量扫描，固定 4 秒会偶发误判"没启动"。
+$startupDeadline = (Get-Date).AddSeconds(60)
+while ((Get-Date) -lt $startupDeadline) {
+    if ((Get-LogText) -match '程序已启动') { break }
+    Start-Sleep -Milliseconds 500
 }
 
 # 等"某个文件的转换结束"：必须匹配该文件自己的 [结果] 行。
