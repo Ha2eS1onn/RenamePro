@@ -21,6 +21,33 @@ public static class PathRules
         ".ts", ".webm", ".flv", ".m4a"
     };
 
+    /// <summary>
+    /// 文档扩展名集合（归一化：小写、带前导点）。
+    /// 刻意不含 .txt：把 txt 改名成别的东西是高频误操作，而纯文本没有 magic 可校验，
+    /// 收录它只会让"无法确认内容"的文档进入外置引擎（与"宁可漏转换"冲突）。
+    /// 因此只收录 Office / ODF / Markdown / HTML / CSV 这类有明确结构或用途的格式。
+    /// </summary>
+    private static readonly HashSet<string> DocumentExtensions = new(StringComparer.Ordinal)
+    {
+        // Word / 文字处理
+        ".docx", ".docm", ".dotx", ".doc", ".odt", ".ott", ".rtf", ".md", ".markdown", ".html", ".htm", ".xhtml",
+        // PowerPoint / 演示文稿
+        ".pptx", ".pptm", ".potx", ".ppt", ".odp", ".otp",
+        // Excel / 电子表格
+        ".xlsx", ".xlsm", ".xltx", ".xls", ".ods", ".ots", ".csv", ".tsv",
+        // PDF：仅当 allowPdfSource=true 时才作为源可用，作为目标始终可用
+        ".pdf"
+    };
+
+    /// <summary>
+    /// 纯文本族扩展名：内容没有 magic number，格式校验只能走"负证据"路径
+    /// （见 <see cref="FormatSniffer.MatchesExtension(string?, string, bool)"/>）。
+    /// </summary>
+    private static readonly HashSet<string> TextLikeExtensions = new(StringComparer.Ordinal)
+    {
+        ".md", ".markdown", ".csv", ".tsv", ".html", ".htm", ".xhtml"
+    };
+
     /// <summary>任意盘符下都排除的目录名（按路径段匹配）。</summary>
     private static readonly string[] ExcludedDirectoryNames = { "$Recycle.Bin", "System Volume Information" };
 
@@ -39,7 +66,11 @@ public static class PathRules
         if (oldExt == newExt) return (false, "扩展名未变化（含仅大小写差异）");
         bool sameImageSet = ImageExtensions.Contains(oldExt) && ImageExtensions.Contains(newExt);
         bool sameAvSet = AudioVideoExtensions.Contains(oldExt) && AudioVideoExtensions.Contains(newExt);
-        if (!sameImageSet && !sameAvSet) return (false, "新旧扩展名不属于同一媒体集合");
+        // 文档集合放宽为"任一端属于文档"：跨族组合（docx → xlsx、pdf → docx）需要走到转换主流程，
+        // 才能给出"只允许目标为 pdf""需要 allowPdfSource"这类可操作的具体原因；
+        // 在这里一刀切忽略只会留下一条含义模糊的日志。
+        bool anyDoc = DocumentExtensions.Contains(oldExt) || DocumentExtensions.Contains(newExt);
+        if (!sameImageSet && !sameAvSet && !anyDoc) return (false, "新旧扩展名不属于同一媒体集合");
 
         // —— 第二优先级：排除目录前缀（新旧路径任一命中即忽略）——
         if (IsUnderExcludedDirectory(oldPath)) return (false, "旧路径位于排除目录");
@@ -65,6 +96,24 @@ public static class PathRules
     /// <summary>判断扩展名（归一化后）是否属于音视频集合。</summary>
     /// <param name="ext">归一化扩展名</param>
     public static bool IsAudioVideoExtension(string ext) => AudioVideoExtensions.Contains(ext);
+
+    /// <summary>判断扩展名（归一化后）是否属于文档集合。</summary>
+    /// <param name="ext">归一化扩展名</param>
+    public static bool IsDocumentExtension(string ext) => DocumentExtensions.Contains(ext);
+
+    /// <summary>
+    /// 判断扩展名是否"在文档管线的可读范围内"：即是否可能作为一次文档转换的**源**。
+    /// 用于把"这个格式根本不进管线"和"内容与后缀不符"区分开，给出更准确的跳过原因。
+    /// </summary>
+    /// <param name="ext">归一化扩展名</param>
+    public static bool IsDocumentSourceCandidate(string ext) =>
+        DocumentExtensions.Contains(ext) || TextLikeExtensions.Contains(ext);
+
+    /// <summary>
+    /// 判断扩展名（归一化后）是否属于纯文本族（内容无 magic，需走放宽的格式校验）。
+    /// </summary>
+    /// <param name="ext">归一化扩展名</param>
+    public static bool IsTextLikeExtension(string ext) => TextLikeExtensions.Contains(ext);
 
     /// <summary>
     /// 判断路径是否位于排除目录内：

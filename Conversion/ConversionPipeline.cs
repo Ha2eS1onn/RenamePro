@@ -44,7 +44,7 @@ public sealed class ConversionPipeline : IDisposable
     public ConversionPipeline(InternalOpsSet internalOps)
     {
         _internalOps = internalOps;
-        _scheduler = new ConversionScheduler(AppConfig.Current.ImageConcurrency);
+        _scheduler = new ConversionScheduler(AppConfig.Current.ImageConcurrency, AppConfig.Current.DocMaxConcurrency);
     }
 
     /// <summary>
@@ -54,6 +54,14 @@ public sealed class ConversionPipeline : IDisposable
     /// <returns>true = 即时生效；false = 队列忙，下次启动生效</returns>
     public bool ApplyImageConcurrency(int imageConcurrency) =>
         _scheduler.TryUpdateImageConcurrency(imageConcurrency);
+
+    /// <summary>
+    /// 应用新的文档队列并发度（“重新加载配置”调用）。
+    /// </summary>
+    /// <param name="docConcurrency">新的文档队列并发度</param>
+    /// <returns>true = 即时生效；false = 队列忙，下次启动生效</returns>
+    public bool ApplyDocumentConcurrency(int docConcurrency) =>
+        _scheduler.TryUpdateDocumentConcurrency(docConcurrency);
 
     /// <summary>取消全部队列（进度对话框“取消”按钮调用）；取消后队列继续处理剩余任务。</summary>
     public void CancelAll() => _scheduler.CancelAll();
@@ -65,12 +73,21 @@ public sealed class ConversionPipeline : IDisposable
         if (running != null && _activeTasks.TryGetValue(running, out var cts)) cts.Cancel();
     }
 
+    /// <summary>提交一次转换任务（防重入：处理中的路径再次触发直接跳过）。</summary>
+    /// <param name="oldPath">改名前路径</param>
+    /// <param name="newPath">改名后路径</param>
+    public void Submit(string oldPath, string newPath) => Submit(oldPath, newPath, blocking: false);
+
     /// <summary>
-    /// 提交一次转换任务（防抖到期后由监听器回调，线程池线程）。
+    /// 提交一次转换任务，可选择同步等待完成。
     /// </summary>
     /// <param name="oldPath">改名前路径</param>
     /// <param name="newPath">改名后路径</param>
-    public void Submit(string oldPath, string newPath)
+    /// <param name="blocking">
+    /// true = 等流程体跑完再返回（只给 <c>--selftest</c> 这类"提交后立刻要结果"的场景用；
+    /// 正常监听传 false，转换在后台线程完成）。
+    /// </param>
+    public void Submit(string oldPath, string newPath, bool blocking)
     {
         // 防重入：处理中的路径再次触发直接跳过
         if (!ProcessingPaths.TryAdd(newPath, 0))
@@ -81,15 +98,26 @@ public sealed class ConversionPipeline : IDisposable
         var task = new ConversionTask(oldPath, newPath);
         var cts = new CancellationTokenSource();
         _activeTasks[task] = cts;
-        _ = RunSafeAsync(task, cts);
+        _ = RunSafeAsync(task, cts, blocking);
     }
 
-    /// <summary>安全执行：统一兜底异常、清理防重入标记与取消令牌，并广播任务结束事件。</summary>
-    private async Task RunSafeAsync(ConversionTask task, CancellationTokenSource cts)
+    /// <summary>
+    /// 安全执行：统一兜底异常、清理防重入标记与取消令牌，并广播任务结束事件。
+    /// </summary>
+    /// <param name="task">任务模型</param>
+    /// <param name="cts">任务取消令牌源</param>
+    /// <param name="blocking">
+    /// true = 同步等待流程走完再返回（只给 <c>--selftest</c> 这类"提交后立刻要结果"的场景用）。
+    /// </param>
+    private async Task RunSafeAsync(ConversionTask task, CancellationTokenSource cts, bool blocking = false)
     {
         try
         {
-            await ProcessAsync(task, cts.Token).ConfigureAwait(false);
+            var work = ProcessAsync(task, cts.Token);
+            if (blocking)
+            {
+                await work.ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
@@ -157,10 +185,19 @@ public sealed class ConversionPipeline : IDisposable
         }
 
         // —— 统一前置校验：magic number 确认真实格式与源（旧）扩展名一致 ——
+        // 纯文本族（md/csv/html 等）没有 magic number，改走"负证据"校验：只有任何已知二进制格式都不匹配才放行。
+        // 其余扩展名保持严格校验，图片/音视频/Office 文档的既有行为不受影响。
         var format = IoRetry.Run("读取文件头", () => FormatSniffer.Sniff(task.NewPath));
-        if (!FormatSniffer.MatchesExtension(format, task.OldExt))
+        var strict = !PathRules.IsTextLikeExtension(task.OldExt);
+        if (!FormatSniffer.MatchesExtension(format, task.OldExt, strict))
         {
-            LogSkip(task, $"magic 不符：内容实为 {format ?? "未知格式"}，源扩展名 {task.OldExt}");
+            // 两种情况要分清：源扩展名根本不在文档/文本集合内（例如把 png 改名成 docx），
+            // 说"magic 不符"会让人以为是内容坏了；实际上这个源格式压根不进管线。
+            var reason = PathRules.IsDocumentSourceCandidate(task.OldExt)
+                ? $"magic 不符：内容实为 {format ?? "未知格式"}，源扩展名 {task.OldExt}"
+                : $"源扩展名 {task.OldExt} 不在文档管线内（内容实为 {format ?? "未知格式"}）；" +
+                  "文档转换只处理 Office / ODF / Markdown / HTML / CSV 这几类后缀";
+            LogSkip(task, reason);
             return;
         }
 
@@ -168,7 +205,42 @@ public sealed class ConversionPipeline : IDisposable
         ConversionLane lane;
         Func<CancellationToken, Task> body;
 
-        if (PathRules.IsImageExtension(task.NewExt))
+        if (PathRules.IsDocumentExtension(task.NewExt) || PathRules.IsDocumentExtension(task.OldExt))
+        {
+            // 总开关：关闭时连引擎都不探测
+            if (!AppConfig.Current.DocumentConversion)
+            {
+                LogSkip(task, "文档转换已在配置中关闭（documentConversion=false）");
+                return;
+            }
+
+            var plan = DocumentMatrix.Plan(task.OldExt, task.NewExt, AppConfig.Current.AllowPdfSource, out var reason);
+            if (plan == null)
+            {
+                LogSkip(task, reason ?? "不在支持矩阵内");
+                return;
+            }
+
+            // 内置 Markdown 转换器不依赖任何外部程序，因此不需要探测引擎
+            if (plan.NeedsExternalEngine)
+            {
+                var status = DocumentEngine.Probe();
+                if (!status.IsAvailable)
+                {
+                    // 与启动自检共用同一个"只写一次"的警告块（否则 log.txt 里会出现两段一模一样的警告）
+                    DocumentEngine.ReportUnavailableOnce(status.Error);
+                    LogSkip(task, $"文档转换引擎不可用：{status.Error}");
+                    return;
+                }
+                if (!string.IsNullOrEmpty(plan.LossNote)) Log.Info($"[文档] 提示：{plan.LossNote}");
+            }
+
+            lane = ConversionLane.Document; // 文档任务一律走专用串行通道，绝不进快速通道
+            task.Progress = new ProgressRelay(task, this);
+            body = ct => RunLaneBodyAsync(task, ct,
+                (temp, token) => DocConverter.ExecuteAsync(task, plan, temp, token));
+        }
+        else if (PathRules.IsImageExtension(task.NewExt))
         {
             // gifPolicy=skip：遇到 gif 改名直接忽略
             if (task.OldExt == ".gif" && AppConfig.Current.GifMode == GifPolicyMode.Skip)
@@ -222,7 +294,7 @@ public sealed class ConversionPipeline : IDisposable
         }
         else
         {
-            LogSkip(task, "扩展名不在图片/音视频集合");
+            LogSkip(task, "扩展名不在图片/音视频/文档集合");
             return;
         }
 

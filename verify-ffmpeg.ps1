@@ -39,7 +39,7 @@ function Invoke-Native {
 $payloadExtractDir = $null
 if ($FromPayload) {
     if (-not (Test-Path $payloadPath)) {
-        Write-Host "缺少载荷 $payloadPath（先跑 publish.ps1 -Mode Full 生成）" -ForegroundColor Red
+        Write-Host "缺少载荷 $payloadPath（先跑 publish.ps1 -Mode Av 生成）" -ForegroundColor Red
         exit 1
     }
     $payloadExtractDir = Join-Path ([System.IO.Path]::GetTempPath()) 'RenamePro-payload-verify'
@@ -240,5 +240,5 @@ if ($failures -gt 0) {
     Write-Host '校验未通过：不要用这组二进制打包。回到 build-ffmpeg.ps1 白名单补组件后重编。' -ForegroundColor Red
     exit 1
 }
-Write-Host '校验通过：可以执行 publish.ps1 -Mode Both 重新打包。' -ForegroundColor Green
+Write-Host '校验通过：可以执行 publish.ps1 -Mode All 重新打包。' -ForegroundColor Green
 exit 0

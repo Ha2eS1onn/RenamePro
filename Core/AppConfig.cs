@@ -44,6 +44,33 @@ public sealed class AppConfigData
     /// <summary>是否跳过云盘按需占位文件（RecallOnDataAccess，默认 true）。</summary>
     public bool SkipCloudFiles { get; set; } = true;
 
+    /// <summary>是否启用文档转换（docx/xlsx/pptx/pdf/md 等，默认 true）。</summary>
+    public bool DocumentConversion { get; set; } = true;
+
+    /// <summary>
+    /// 文档引擎选择："auto" / "libreoffice" / "bundled" / "com"（默认 auto）。
+    /// bundled = 随包目录 LibreOffice\（全功能版自带）。
+    /// </summary>
+    public string DocumentEngine { get; set; } = "auto";
+
+    /// <summary>是否允许把 PDF 当源（默认 false：PDF 是只读版式格式，转换只保证文字内容）。</summary>
+    public bool AllowPdfSource { get; set; }
+
+    /// <summary>单个文档任务的超时秒数（30~1800，默认 180；实际还会按文件大小放宽）。</summary>
+    public int DocTimeoutSeconds { get; set; } = 180;
+
+    /// <summary>文档队列并发度（1~4，默认 1：文档引擎很重，默认全局串行）。</summary>
+    public int DocMaxConcurrency { get; set; } = 1;
+
+    /// <summary>
+    /// Office COM 调用的瞬时拒绝重试次数（0~5，默认 3）。
+    /// 典型场景是 "Call was rejected by callee"（0x80010001）：Word/Excel 正在忙，稍后重试即可成功。
+    /// </summary>
+    public int DocComRetries { get; set; } = 3;
+
+    /// <summary>启动时是否预热文档引擎（后台跑一次极小转换，把首次配置目录创建代价挪出用户首次转换）。</summary>
+    public bool DocWarmupOnStart { get; set; } = true;
+
     /// <summary>GIF 策略枚举化（非 "skip" 一律按首帧处理）。</summary>
     [JsonIgnore]
     public GifPolicyMode GifMode =>
@@ -90,7 +117,34 @@ public static class AppConfig
   "watchDrives": [],
 
   // 是否跳过云盘按需占位文件（RecallOnDataAccess）
-  "skipCloudFiles": true
+  "skipCloudFiles": true,
+
+  // ================= 文档转换（docx / xlsx / pptx / md / pdf 等） =================
+  // 是否启用文档转换；false = 文档后缀的改名只写日志跳过（引擎不会被探测）
+  "documentConversion": true,
+
+  // 文档引擎选择：
+  //   "auto"        = 自动：随包目录 LibreOffice\ → 系统 LibreOffice → Office COM（推荐）
+  //   "libreoffice" = 只用系统安装的 LibreOffice（不碰 Office COM）
+  //   "bundled"     = 只用随包目录里的 LibreOffice\（全功能版自带；不扫描系统安装）
+  //   "com"         = 只用已安装的 Microsoft Office（Word / PowerPoint / Excel）
+  "documentEngine": "auto",
+
+  // 是否允许把 PDF 当源（pdf → docx/odt/txt/html/md）；
+  // 默认 false：PDF 是只读版式格式，转出来会丢分栏、浮动对象与表格边界
+  "allowPdfSource": false,
+
+  // 单个文档任务的超时秒数（30~1800）；实际超时还会按源文件大小放宽（每 MB +3 秒，上限 1800）
+  "docTimeoutSeconds": 180,
+
+  // 文档队列并发度（1~4）：文档引擎很重，默认 1 = 全局串行
+  "docMaxConcurrency": 1,
+
+  // Office COM 调用的瞬时拒绝重试次数（0~5）：用于 "Call was rejected by callee" 这类忙时拒绝
+  "docComRetries": 3,
+
+  // 启动时是否预热文档引擎（后台跑一次极小转换，把 LibreOffice 首次创建配置目录的代价挪到启动后台）
+  "docWarmupOnStart": true
 }
 """;
 
@@ -131,7 +185,7 @@ public static class AppConfig
                     Log.Info($"已生成默认配置文件：{FilePath}");
                 }
                 _current = Parse(File.ReadAllText(FilePath, Encoding.UTF8));
-                Log.Info($"配置已加载：备份={_current.EnableBackup}，失败回滚={_current.AutoRollbackOnFailure}，Toast={_current.EnableToast}，进度框={_current.ShowProgressDialog}，图片质量={_current.ImageQuality}，gif={_current.GifPolicy}，图片并发={_current.ImageConcurrency}，监听盘={(_current.WatchDrives.Count == 0 ? "全部固定磁盘" : string.Join(",", _current.WatchDrives))}，跳过云盘占位={_current.SkipCloudFiles}");
+                Log.Info($"配置已加载：备份={_current.EnableBackup}，失败回滚={_current.AutoRollbackOnFailure}，Toast={_current.EnableToast}，进度框={_current.ShowProgressDialog}，图片质量={_current.ImageQuality}，gif={_current.GifPolicy}，图片并发={_current.ImageConcurrency}，监听盘={(_current.WatchDrives.Count == 0 ? "全部固定磁盘" : string.Join(",", _current.WatchDrives))}，跳过云盘占位={_current.SkipCloudFiles}，文档转换={(_current.DocumentConversion ? "开" : "关")}，文档引擎={_current.DocumentEngine}，文档并发={_current.DocMaxConcurrency}，文档超时={_current.DocTimeoutSeconds}s，PDF 源={(_current.AllowPdfSource ? "允许" : "禁止")}");
             }
             catch (Exception ex)
             {
@@ -181,6 +235,33 @@ public static class AppConfig
         if (data.AutoRollbackOnFailure && !data.EnableBackup)
         {
             Log.Warn("配置冲突：autoRollbackOnFailure=true 但 enableBackup=false，失败时没有副本可回滚");
+        }
+
+        // —— 文档转换相关 ——
+        data.DocumentEngine = (data.DocumentEngine ?? string.Empty).Trim().ToLowerInvariant();
+        if (data.DocumentEngine is not ("auto" or "libreoffice" or "bundled" or "com"))
+        {
+            Log.Warn($"配置 documentEngine=\"{data.DocumentEngine}\" 无法识别，已按 auto 处理");
+            data.DocumentEngine = "auto";
+        }
+        if (data.DocTimeoutSeconds is < 30 or > 1800)
+        {
+            Log.Warn($"配置 docTimeoutSeconds={data.DocTimeoutSeconds} 越界，已钳制到 30~1800");
+            data.DocTimeoutSeconds = Math.Clamp(data.DocTimeoutSeconds, 30, 1800);
+        }
+        if (data.DocMaxConcurrency is < 1 or > 4)
+        {
+            Log.Warn($"配置 docMaxConcurrency={data.DocMaxConcurrency} 越界，已钳制到 1~4");
+            data.DocMaxConcurrency = Math.Clamp(data.DocMaxConcurrency, 1, 4);
+        }
+        if (data.DocComRetries is < 0 or > 5)
+        {
+            Log.Warn($"配置 docComRetries={data.DocComRetries} 越界，已钳制到 0~5");
+            data.DocComRetries = Math.Clamp(data.DocComRetries, 0, 5);
+        }
+        if (data.AllowPdfSource && !data.DocumentConversion)
+        {
+            Log.Warn("配置冲突：allowPdfSource=true 但 documentConversion=false，PDF 源不会被处理");
         }
         return data;
     }

@@ -1,0 +1,3 @@
+# 桩引擎自己的临时目录（bin/ obj/ dist/ 已由仓库根 .gitignore 覆盖，这里只补 .scratch/）
+# 验证用例（--version、docx→pdf、NO_OUTPUT、EXIT、PROFILE_LOG 等）都在 .scratch\ 下跑，跑完即删。
+.scratch/

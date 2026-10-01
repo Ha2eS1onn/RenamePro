@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
@@ -11,10 +11,10 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <Platforms>x64</Platforms>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <!-- 版本号：与发布 tag 保持一致（右键 exe 属性里显示的版本） -->
-    <Version>1.1.0</Version>
-    <AssemblyVersion>1.1.0.0</AssemblyVersion>
-    <FileVersion>1.1.0.0</FileVersion>
+    <!-- 版本号：与发布 tag 保持一致（右键 exe 属性里显示的版本）；publish.ps1 会用 -p:Version 覆盖 -->
+    <Version>1.2.0</Version>
+    <AssemblyVersion>1.2.0.0</AssemblyVersion>
+    <FileVersion>1.2.0.0</FileVersion>
     <Product>RenamePro</Product>
     <Description>Windows 托盘工具：在资源管理器里改文件后缀，后台自动把内容真正转换成新格式</Description>
     <Copyright>Copyright (C) 2026 Ha2eS1onn</Copyright>
@@ -22,16 +22,38 @@
          %TEMP%\.net\RenamePro\<hash>\，同一版本只解压一次，之后复用缓存；
          实测冷启动约 1.3~1.9 秒、热启动约 30 毫秒。不想要这个首启代价时，删掉本行即可。 -->
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- 载荷闸门：FFmpeg 载荷是编译期嵌入的，由 publish.ps1 按版本注入
+         （-p:EmbedFfmpegPayload=true|false）：图片版=false，音视频版/全功能版=true。
+         默认值取 true 与开发期一致，这样 `dotnet build` 的行为和历史版本完全相同。
+         文档引擎（LibreOffice）自 1.2 起**不再嵌入 exe**，改为随包目录 LibreOffice\，
+         由 DocumentEngine 在程序目录里直接发现（见 build-docengine.ps1 与 publish.ps1 -Mode Docs）。 -->
+    <EmbedFfmpegPayload Condition="'$(EmbedFfmpegPayload)' == ''">true</EmbedFfmpegPayload>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- 测试夹具（test\ 下的独立工程，例如冒充 LibreOffice 的桩引擎）自带 obj\ 与 bin\，
+         必须从主工程的默认通配里排除：否则它们的 obj\*.AssemblyInfo.cs 会被当成主工程的源码
+         一起编译，报 CS0579「特性重复」。排除目录而不是排除 .cs，是为了让将来新增的夹具也能自动生效。 -->
+    <Compile Remove="test\**" />
+    <None Remove="test\**" />
+    <EmbeddedResource Remove="test\**" />
+    <Content Remove="test\**" />
+  </ItemGroup>
   <ItemGroup>
     <!-- 托盘图标：同时作为 exe 图标与嵌入资源（运行时由 TrayAppContext 加载） -->
     <EmbeddedResource Include="Assets\app.ico" LogicalName="RenamePro.Assets.app.ico" />
     <!-- FFmpeg 载荷（ffmpeg/ffprobe + 运行时 DLL 压缩成一个 zip），由 publish.ps1 生成。
          EmbeddedResource 由编译器直接写进程序集，与单文件发布器无关（不需要 ExcludeFromSingleFile）。
-         Condition 保证开发者还没生成载荷时也能正常 dotnet build（此时音视频功能自动禁用）。 -->
+         双条件：开关打开 + 文件存在。缺文件时也能正常 dotnet build（此时音视频功能自动禁用）。 -->
     <EmbeddedResource Include="Assets\ffmpeg-payload.zip"
                       LogicalName="RenamePro.Assets.ffmpeg-payload.zip"
-                      Condition="Exists('Assets\ffmpeg-payload.zip')" />
+                      Condition="'$(EmbedFfmpegPayload)' == 'true' and Exists('Assets\ffmpeg-payload.zip')" />
+    <!-- 文档引擎（裁剪后的 LibreOffice 目录树）不再压成载荷嵌入 exe，而是作为 LibreOffice\
+         目录随发布包分发，运行时由 DocumentEngine 直接在程序目录里发现。
+         下面这条规则只服务开发期：把 build-docengine.ps1 产出的 libreoffice\ 整树复制到输出目录，
+         让 `dotnet build -c Debug` 之后就能直接验证文档转换（Release 不复制：publish 时由脚本
+         自己把引擎树放进发布包，避免每次发布白复制 700 MB）。用 ** 通配保留子目录结构。 -->
+    <None Update="libreoffice\**\*" CopyToOutputDirectory="PreserveNewest"
+          Condition="'$(Configuration)' == 'Debug'" />
   </ItemGroup>
   <Target Name="RemoveUnusedAssembliesFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
     <!-- 体积优化：纯 WinForms 程序运行期不需要 WPF / 设计器 / 调试符号程序集，发布时剔除（约省 40MB） -->

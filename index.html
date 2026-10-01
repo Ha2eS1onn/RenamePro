@@ -304,7 +304,7 @@ details[open] p { animation: answer-appears .2s ease-out; }
   display: flex; justify-content: center; align-items: baseline; flex-wrap: wrap; gap: 8px 13px;
   margin: 27px auto; color: var(--muted); font-size: 13px; text-align: center;
 }
-.download-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; max-width: 840px; margin-inline: auto; }
+.download-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; max-width: 1080px; margin-inline: auto; }
 .download-card {
   display: flex; flex-direction: column; align-items: flex-start; padding: 28px;
   background: var(--paper); border: 1px solid var(--line); border-radius: 24px;
@@ -604,8 +604,8 @@ html[data-reduced-motion] :is(.button, .button svg) { transform: none !important
         <span lang="zh-CN">改个后缀，<br>就<span class="highlight">换了格式</span>。</span>
       </h1>
       <p class="hero-description reveal">
-        <span lang="en">Windows only changes the name, never the bytes — so a renamed file often breaks. RenamePro watches your renames in Explorer and truly converts the content to the new format: image, audio or video.</span>
-        <span lang="zh-CN">Windows 改后缀只改名字，不改内容，改完常常得到打不开的坏文件。RenamePro 在后台监听资源管理器里的改名动作，把文件内容真正转换成新格式——图片、音频、视频都行。</span>
+        <span lang="en">Windows only changes the name, never the bytes — so a renamed file often breaks. RenamePro watches your renames in Explorer and truly converts the content to the new format: image, audio, video or document.</span>
+        <span lang="zh-CN">Windows 改后缀只改名字，不改内容，改完常常得到打不开的坏文件。RenamePro 在后台监听资源管理器里的改名动作，把文件内容真正转换成新格式——图片、音频、视频、文档都行。</span>
       </p>
       <div class="hero-actions reveal">
         <a class="button primary" href="#download">
@@ -765,6 +765,11 @@ html[data-reduced-motion] :is(.button, .button svg) { transform: none !important
           <p><span lang="en">FFmpeg remuxes with <code>-c copy</code> whenever the codecs fit — seconds, regardless of file size — and re-encodes only when it has to.</span><span lang="zh-CN">编码与目标容器兼容时 FFmpeg 只重封装不重编码，秒级完成、与体积无关；不兼容才自动重编码。</span></p>
         </li>
         <li class="feature-card reveal">
+          <div class="feature-mark"><svg aria-hidden="true"><use href="#i-code"/></svg></div>
+          <h3><span lang="en">Documents, same rename habit</span><span lang="zh-CN">文档也能改后缀</span></h3>
+          <p><span lang="en">Rename <code>report.docx</code> to <code>report.pdf</code>, or <code>notes.md</code> to <code>notes.docx</code>. Office, ODF and Markdown run through a headless engine (or a built-in converter), verified by magic number first.</span><span lang="zh-CN">把 <code>report.docx</code> 改成 <code>report.pdf</code>、<code>notes.md</code> 改成 <code>notes.docx</code> 都会真正转换：Office / ODF / Markdown 走无头引擎或内置转换器，转换前照样先校验真实格式。</span></p>
+        </li>
+        <li class="feature-card reveal">
           <div class="feature-mark"><svg aria-hidden="true"><use href="#i-copy"/></svg></div>
           <h3><span lang="en">A copy before anything</span><span lang="zh-CN">转换前先留副本</span></h3>
           <p><span lang="en">The original is copied aside first (<code>photo - copy.jpg</code>). Failures can roll back automatically, and your backup is never deleted for you.</span><span lang="zh-CN">转换前先复制一份原格式副本（<code>photo - 副本.jpg</code>）；失败可自动回滚，程序永不自动删除副本。</span></p>
@@ -810,6 +815,15 @@ html[data-reduced-motion] :is(.button, .button svg) { transform: none !important
           <p><span lang="en">Video → audio extracts the track; audio → video wraps an audio-only stream. Stream copy whenever the codecs fit.</span><span lang="zh-CN">视频转音频为提取音轨；音频转视频为仅音频流封装。编码兼容时优先流拷贝。</span></p>
         </li>
         <li class="format-group reveal">
+          <h3><span lang="en">Documents · same family, or to PDF</span><span lang="zh-CN">文档 · 同族互转或转 PDF</span></h3>
+          <div class="chips">
+            <span class="chip">docx</span><span class="chip">odt</span><span class="chip">rtf</span><span class="chip">md</span>
+            <span class="chip">pptx</span><span class="chip">odp</span><span class="chip">xlsx</span><span class="chip">ods</span>
+            <span class="chip">csv</span><span class="chip accent">pdf</span>
+          </div>
+          <p><span lang="en">Word, presentation and spreadsheet families convert inside themselves, or to PDF. Cross-family (say <code>docx</code> → <code>xlsx</code>) is refused on purpose, and <code>md</code> → <code>docx</code> needs no engine at all.</span><span lang="zh-CN">文字处理、演示文稿、电子表格各自族内互转，或转成 PDF；跨族转换（如 <code>docx</code> → <code>xlsx</code>）按设计拒绝，而 <code>md</code> → <code>docx</code> 由内置转换器完成，不需要任何引擎。</span></p>
+        </li>
+        <li class="format-group reveal">
           <h3><span lang="en">Audio · per-target encoder</span><span lang="zh-CN">音频 · 按目标选编码器</span></h3>
           <div class="chips">
             <span class="chip">mp3</span><span class="chip">wav</span><span class="chip">flac</span>
@@ -848,10 +862,10 @@ html[data-reduced-motion] :is(.button, .button svg) { transform: none !important
         <div class="guide-body">
           <ol class="guide-steps">
             <li><strong><span lang="en">Pick a package.</span><span lang="zh-CN">选一个包。</span></strong>
-              <p><span lang="en"><code>RenamePro-Full-*.zip</code> (images + audio/video, bundles FFmpeg) or <code>RenamePro-Image-*.zip</code> (smallest, images only).</span><span lang="zh-CN"><code>RenamePro-Full-*.zip</code>（完整版，图片 + 音视频，内置 FFmpeg）或 <code>RenamePro-Image-*.zip</code>（图片版，体积最小）。</span></p>
+              <p><span lang="en">Three packages on the Releases page: <code>RenamePro-图片版-*.zip</code> (single exe, images only, smallest), <code>RenamePro-音视频版-*.zip</code> (single exe, images + audio/video, FFmpeg inside) and <code>RenamePro-全功能版-*.zip</code> (folder with <code>LibreOffice\</code>, adds Office / ODF / PDF / Markdown conversion).</span><span lang="zh-CN">Releases 页有三个包：<code>RenamePro-图片版-*.zip</code>（单 exe，仅图片，最小）、<code>RenamePro-音视频版-*.zip</code>（单 exe，图片 + 音视频，内置 FFmpeg）、<code>RenamePro-全功能版-*.zip</code>（含 <code>LibreOffice\</code> 的目录包，额外支持 Office / ODF / PDF / Markdown 互转）。</span></p>
             </li>
             <li><strong><span lang="en">Extract and run.</span><span lang="zh-CN">解压后运行。</span></strong>
-              <p><span lang="en">Keep the folder layout intact and double-click <code>RenamePro.exe</code>. No installer, no window — a tray icon appears.</span><span lang="zh-CN">保持目录结构完整，双击 <code>RenamePro.exe</code>。免安装、无窗口，通知区出现托盘图标。</span></p>
+              <p><span lang="en">Keep the folder layout intact and double-click <code>RenamePro.exe</code>. No installer, no window — a tray icon appears. In the all-in-one build the exe only finds the document engine as long as it stays next to <code>LibreOffice\</code>.</span><span lang="zh-CN">保持目录结构完整，双击 <code>RenamePro.exe</code>。免安装、无窗口，通知区出现托盘图标。全功能版里 exe 必须和同级 <code>LibreOffice\</code> 待在一起才能做文档转换。</span></p>
             </li>
             <li><strong><span lang="en">Rename an extension.</span><span lang="zh-CN">改一个后缀试试。</span></strong>
               <p><span lang="en">In Explorer, rename <code>photo.jpg</code> to <code>photo.png</code>. Conversion starts on its own.</span><span lang="zh-CN">在资源管理器里把 <code>photo.jpg</code> 改成 <code>photo.png</code>，转换自动开始。</span></p>
@@ -888,17 +902,20 @@ html[data-reduced-motion] :is(.button, .button svg) { transform: none !important
             <li><strong><span lang="en">Add FFmpeg (optional).</span><span lang="zh-CN">放入 FFmpeg（可选）。</span></strong>
               <p><span lang="en">Put <code>ffmpeg.exe</code> and <code>ffprobe.exe</code> into the <code>ffmpeg\</code> folder for audio/video support. Image conversion works without them.</span><span lang="zh-CN">把 <code>ffmpeg.exe</code> 与 <code>ffprobe.exe</code> 放入 <code>ffmpeg\</code> 目录以启用音视频功能；没有它们图片转换照常工作。</span></p>
             </li>
+            <li><strong><span lang="en">Add the document engine (optional).</span><span lang="zh-CN">放入文档引擎（可选）。</span></strong>
+              <p><span lang="en">Run <code>setup-lo-dev.ps1</code> then <code>build-docengine.ps1</code> to trim the official LibreOffice into the bundled <code>libreoffice\</code> folder — that is what the all-in-one package ships as <code>LibreOffice\</code>.</span><span lang="zh-CN">依次运行 <code>setup-lo-dev.ps1</code> 与 <code>build-docengine.ps1</code>，把官方 LibreOffice 裁剪成随包的 <code>libreoffice\</code> 目录——全功能版发布包里它就是 <code>LibreOffice\</code>。</span></p>
+            </li>
             <li><strong><span lang="en">Build.</span><span lang="zh-CN">构建。</span></strong>
               <p><code>dotnet build RenamePro.csproj -c Debug</code></p>
             </li>
             <li><strong><span lang="en">Package a portable zip.</span><span lang="zh-CN">打包便携发布包。</span></strong>
-              <p><code>powershell -ExecutionPolicy Bypass -File publish.ps1</code></p>
+              <p><code>powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode All</code></p>
             </li>
           </ol>
           <aside class="guide-note">
             <h3><span lang="en">Design constraints</span><span lang="zh-CN">设计约束</span></h3>
             <p><span lang="en">Magick.NET is the only third-party NuGet package. No <code>PublishTrim</code> (it breaks COM interop), no <code>ReadyToRun</code> (doubles the size).</span><span lang="zh-CN">除 Magick.NET 外不引入任何第三方包；不使用 <code>PublishTrim</code>（破坏 COM Interop），不使用 <code>ReadyToRun</code>（体积翻倍）。</span></p>
-            <p><span lang="en">Output is a single-file self-contained build — a green portable zip.</span><span lang="zh-CN">产物为单文件自包含构建，即绿色便携 zip。</span></p>
+            <p><span lang="en">Output: the image and audio/video builds are single-file self-contained exes; the all-in-one build is a folder (<code>RenamePro.exe</code> + <code>LibreOffice\</code>) — a green portable zip either way.</span><span lang="zh-CN">产物：图片版与音视频版是单文件自包含 exe；全功能版是目录包（<code>RenamePro.exe</code> + <code>LibreOffice\</code>）。三者都是绿色便携 zip。</span></p>
           </aside>
         </div>
       </details>
@@ -982,9 +999,9 @@ html[data-reduced-motion] :is(.button, .button svg) { transform: none !important
 
       <div class="download-cards">
         <div class="download-card reveal">
-          <div class="feature-mark"><svg aria-hidden="true"><use href="#i-film"/></svg></div>
-          <h3><span lang="en">Full build</span><span lang="zh-CN">完整版</span></h3>
-          <p><span lang="en">Images and audio/video, all features. Bundles <code>ffmpeg.exe</code> / <code>ffprobe.exe</code>. Package: <code>RenamePro-Full-*.zip</code></span><span lang="zh-CN">图片 + 音视频功能齐全，内置 <code>ffmpeg.exe</code> / <code>ffprobe.exe</code>。包名：<code>RenamePro-Full-*.zip</code></span></p>
+          <div class="feature-mark"><svg aria-hidden="true"><use href="#i-image"/></svg></div>
+          <h3><span lang="en">Image build</span><span lang="zh-CN">图片版</span></h3>
+          <p><span lang="en">Smallest download (≈64 MB). A single exe, image conversion only; audio/video and document renames are logged and skipped. Package: <code>RenamePro-图片版-v1.2.0.zip</code></span><span lang="zh-CN">体积最小（约 64 MB），只有一个 exe：仅图片转换，音视频与文档改名只记日志跳过。包名：<code>RenamePro-图片版-v1.2.0.zip</code></span></p>
           <a class="button primary download-button" href="https://github.com/Ha2eS1onn/RenamePro/releases/latest">
             <svg aria-hidden="true"><use href="#i-download"/></svg>
             <span lang="en">Download from GitHub</span><span lang="zh-CN">GitHub 下载</span>
@@ -993,14 +1010,25 @@ html[data-reduced-motion] :is(.button, .button svg) { transform: none !important
         </div>
 
         <div class="download-card reveal">
-          <div class="feature-mark"><svg aria-hidden="true"><use href="#i-image"/></svg></div>
-          <h3><span lang="en">Image build</span><span lang="zh-CN">图片版</span></h3>
-          <p><span lang="en">Smallest download. Image conversion only; audio/video renames are logged and skipped. Package: <code>RenamePro-Image-*.zip</code></span><span lang="zh-CN">体积最小，仅图片转换；音视频改名只记日志跳过。包名：<code>RenamePro-Image-*.zip</code></span></p>
+          <div class="feature-mark"><svg aria-hidden="true"><use href="#i-film"/></svg></div>
+          <h3><span lang="en">Audio / video build</span><span lang="zh-CN">音视频版</span></h3>
+          <p><span lang="en">A single exe (≈78 MB) with a trimmed FFmpeg inside; images and audio/video. The bundled FFmpeg unpacks once (about 150 ms) on the first audio/video conversion. Package: <code>RenamePro-音视频版-v1.2.0.zip</code></span><span lang="zh-CN">一个 exe（约 78 MB），内置精简 FFmpeg：图片 + 音视频。首次做音视频转换时把它解压一次（约 150 ms）。包名：<code>RenamePro-音视频版-v1.2.0.zip</code></span></p>
           <a class="button primary download-button" href="https://github.com/Ha2eS1onn/RenamePro/releases/latest">
             <svg aria-hidden="true"><use href="#i-download"/></svg>
             <span lang="en">Download from GitHub</span><span lang="zh-CN">GitHub 下载</span>
           </a>
-          <a href="https://github.com/Ha2eS1onn/RenamePro/releases"><span lang="en">More downloads</span><span lang="zh-CN">更多下载</span></a>
+          <a href="https://github.com/Ha2eS1onn/RenamePro/releases"><span lang="en">Release notes</span><span lang="zh-CN">版本说明</span></a>
+        </div>
+
+        <div class="download-card reveal">
+          <div class="feature-mark"><svg aria-hidden="true"><use href="#i-copy"/></svg></div>
+          <h3><span lang="en">All-in-one build</span><span lang="zh-CN">全功能版</span></h3>
+          <p><span lang="en">A folder package (≈330 MB download, ≈790 MB unpacked): <code>RenamePro.exe</code> plus a <code>LibreOffice\</code> engine folder for document conversion. No install, no first-run unpacking — just keep the folder together. Package: <code>RenamePro-全功能版-v1.2.0.zip</code></span><span lang="zh-CN">目录包（下载约 330 MB，解压后约 790 MB）：<code>RenamePro.exe</code> + 文档转换引擎目录 <code>LibreOffice\</code>。免安装、无首次解压，只要整个目录一起用就行。包名：<code>RenamePro-全功能版-v1.2.0.zip</code></span></p>
+          <a class="button primary download-button" href="https://github.com/Ha2eS1onn/RenamePro/releases/latest">
+            <svg aria-hidden="true"><use href="#i-download"/></svg>
+            <span lang="en">Download from GitHub</span><span lang="zh-CN">GitHub 下载</span>
+          </a>
+          <a href="https://github.com/Ha2eS1onn/RenamePro/releases"><span lang="en">Release notes</span><span lang="zh-CN">版本说明</span></a>
         </div>
       </div>
 

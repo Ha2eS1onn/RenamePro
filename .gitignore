@@ -21,3 +21,11 @@ ffmpeg/*.bak
 # FFmpeg 载荷：由 publish.ps1 从 ffmpeg\ 生成、编译期嵌入 exe，属构建产物
 Assets/ffmpeg-payload.zip
 Assets/ffmpeg-payload.zip.hold
+
+# 随包文档引擎目录（裁剪后的 LibreOffice，由 build-docengine.ps1 生成）：
+# 自 1.2 起文档引擎随发布包以 LibreOffice\ 目录分发，不再嵌入 exe。
+# LibreOffice 本体体积大且许可独立（MPL-2.0），不入库；MSI 缓存在 obj\ 下，已被上面的规则忽略。
+libreoffice/
+
+# 自检报告（--selftest 生成，属运行产物）
+selftest-report.txt

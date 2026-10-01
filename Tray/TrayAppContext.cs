@@ -19,6 +19,9 @@ public sealed class TrayAppContext : ApplicationContext
     /// <summary>“开机自启动”勾选菜单项。</summary>
     private readonly ToolStripMenuItem _startupMenuItem;
 
+    /// <summary>“文档引擎状态”菜单项。</summary>
+    private readonly ToolStripMenuItem _engineStatusMenuItem;
+
     /// <summary>内部操作抑制表（传给监听器做首行检查点）。</summary>
     private readonly InternalOpsSet _internalOps = new();
 
@@ -83,16 +86,26 @@ public sealed class TrayAppContext : ApplicationContext
         var reloadMenuItem = new ToolStripMenuItem("重新加载配置");
         reloadMenuItem.Click += (_, _) => ReloadConfig();
 
+        // 文档引擎只做只读状态展示（排障第一现场：引擎到底找没找到、为什么不可用）。
+        // 1.2 起文档引擎是随包目录 LibreOffice\，没有"首次解压"这件事，因此不再需要解压入口。
+        _engineStatusMenuItem = new ToolStripMenuItem("文档引擎：未探测") { Enabled = false };
+
         var exitMenuItem = new ToolStripMenuItem("退出");
         exitMenuItem.Click += (_, _) => ExitApplication();
 
         var menu = new ContextMenuStrip();
-        // 菜单打开时刷新勾选状态（注册可能刚在后台完成）
-        menu.Opening += (_, _) => _startupMenuItem.Checked = StartupManager.IsRegistered();
+        // 菜单打开时刷新勾选状态（注册可能刚在后台完成）与文档引擎状态
+        menu.Opening += (_, _) =>
+        {
+            _startupMenuItem.Checked = StartupManager.IsRegistered();
+            _engineStatusMenuItem.Text = DescribeEngineState();
+        };
         menu.Items.Add(_pauseMenuItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_startupMenuItem);
         menu.Items.Add(reloadMenuItem);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(_engineStatusMenuItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exitMenuItem);
 
@@ -118,6 +131,13 @@ public sealed class TrayAppContext : ApplicationContext
         _progress = new ProgressCoordinator(_pipeline, _shellMessageWindow.Handle, FlashTrayIcon);
         // Toast 需要 AUMID 与开始菜单快捷方式，初始化放后台，不阻塞启动
         Task.Run(ToastService.Initialize);
+
+        // 文档引擎自检放后台：探测 + 一次极小预热（把首次创建配置目录的代价挪出用户的第一次转换），
+        // 失败只写日志，不影响托盘启动，也不影响图片/音视频功能
+        if (AppConfig.Current.DocumentConversion && AppConfig.Current.DocWarmupOnStart)
+        {
+            Task.Run(DocumentEngine.WarmUpAsync);
+        }
 
         // 开机自启动：未注册则自动注册（幂等，可能弹一次 UAC，失败不影响监听）
         EnsureStartupRegistration();
@@ -217,7 +237,17 @@ public sealed class TrayAppContext : ApplicationContext
         var config = AppConfig.Current;
         _watcher.ApplyWatchDrives();
         var concurrencyApplied = _pipeline.ApplyImageConcurrency(config.ImageConcurrency);
-        Log.Info($"[配置] 已重新加载：备份={(config.EnableBackup ? "开" : "关")}，失败回滚={(config.AutoRollbackOnFailure ? "开" : "关")}，Toast={(config.EnableToast ? "开" : "关")}，进度框={(config.ShowProgressDialog ? "开" : "关")}，图片质量={config.ImageQuality}，gif={(config.GifMode == GifPolicyMode.Skip ? "忽略" : "取首帧")}，图片并发={config.ImageConcurrency}{(concurrencyApplied ? "" : "（队列忙，下次启动生效）")}，监听盘={(config.WatchDrives.Count == 0 ? "全部固定磁盘" : string.Join(",", config.WatchDrives))}，跳过云盘占位={config.SkipCloudFiles}");
+        var docConcurrencyApplied = _pipeline.ApplyDocumentConcurrency(config.DocMaxConcurrency);
+        // 引擎选择可能改了：清缓存并立即重新探测，让用户马上看到引擎是否被找到（排障第一现场）
+        DocumentEngine.InvalidateCache();
+        var engineState = "未探测（文档转换已关闭）";
+        if (config.DocumentConversion)
+        {
+            var status = DocumentEngine.Probe();
+            engineState = status.IsAvailable ? status.Detail! : $"不可用（{status.Error}）";
+            Log.Info($"[配置] 文档引擎状态：{engineState}");
+        }
+        Log.Info($"[配置] 已重新加载：备份={(config.EnableBackup ? "开" : "关")}，失败回滚={(config.AutoRollbackOnFailure ? "开" : "关")}，Toast={(config.EnableToast ? "开" : "关")}，进度框={(config.ShowProgressDialog ? "开" : "关")}，图片质量={config.ImageQuality}，gif={(config.GifMode == GifPolicyMode.Skip ? "忽略" : "取首帧")}，图片并发={config.ImageConcurrency}{(concurrencyApplied ? "" : "（队列忙，下次启动生效）")}，监听盘={(config.WatchDrives.Count == 0 ? "全部固定磁盘" : string.Join(",", config.WatchDrives))}，跳过云盘占位={config.SkipCloudFiles}，文档转换={(config.DocumentConversion ? "开" : "关")}，文档引擎={config.DocumentEngine}，文档并发={config.DocMaxConcurrency}{(docConcurrencyApplied ? "" : "（队列忙，下次启动生效）")}，文档超时={config.DocTimeoutSeconds}s，PDF 源={(config.AllowPdfSource ? "允许" : "禁止")}");
     }
 
     /// <summary>
@@ -227,6 +257,24 @@ public sealed class TrayAppContext : ApplicationContext
     private void EnsureStartupRegistration()
     {
         Task.Run(StartupManager.EnsureRegistered);
+    }
+
+    /// <summary>
+    /// 菜单上显示的文档引擎状态：只读探测（结果在进程内缓存，打开菜单不会触发重活）。
+    /// </summary>
+    private static string DescribeEngineState()
+    {
+        try
+        {
+            var config = AppConfig.Current;
+            if (!config.DocumentConversion) return "文档引擎：已按配置关闭";
+            var status = DocumentEngine.Probe();
+            return status.IsAvailable ? $"文档引擎：{status.Detail}" : "文档引擎：不可用（详见 log.txt）";
+        }
+        catch (Exception ex)
+        {
+            return $"文档引擎：状态读取失败（{ex.Message}）";
+        }
     }
 
     /// <summary>退出程序：停监听、释放托盘图标。</summary>

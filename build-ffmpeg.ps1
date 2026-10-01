@@ -226,4 +226,4 @@ foreach ($name in $dllNames) {
 
 Write-Host '=== 构建完成 ===' -ForegroundColor Cyan
 Write-Host '下一步：powershell -ExecutionPolicy Bypass -File verify-ffmpeg.ps1'
-Write-Host '校验通过后再执行：powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode Both'
+Write-Host '校验通过后再执行：powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode All'

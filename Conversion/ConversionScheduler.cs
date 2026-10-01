@@ -1,6 +1,6 @@
 namespace RenamePro.Conversion;
 
-/// <summary>任务通道：分级队列的三级通道。</summary>
+/// <summary>任务通道：分级队列的多级通道。</summary>
 public enum ConversionLane
 {
     /// <summary>快速通道（并发 2）：FFmpeg 流拷贝任务、小于 2MB 的图片任务。</summary>
@@ -10,11 +10,14 @@ public enum ConversionLane
     Image,
 
     /// <summary>音视频通道（并发 1，全局串行）：需要重编码的 FFmpeg 任务。</summary>
-    AudioVideo
+    AudioVideo,
+
+    /// <summary>文档通道（并发 = docMaxConcurrency，默认 1，全局串行）：LibreOffice / Office COM 转换。</summary>
+    Document
 }
 
 /// <summary>
-/// 分级调度队列：三条通道各自限流（2 / 2 / 1），任务体（备份 + 转换 + 替换）在通道槽内执行。
+/// 分级调度队列：四条通道各自限流（2 / 2 / 1 / docMaxConcurrency），任务体（备份 + 转换 + 替换）在通道槽内执行。
 /// 取消粒度：单任务令牌取消“当前任务”，<see cref="CancelAll"/> 取消全部队列；
 /// 两者都不影响队列继续处理剩余任务。
 /// </summary>
@@ -29,7 +32,10 @@ public sealed class ConversionScheduler : IDisposable
     /// <summary>音视频通道并发度 1（重编码单任务即可打满 CPU）。</summary>
     private readonly SemaphoreSlim _avLane = new(1);
 
-    /// <summary>取消全部队列用的同步锁（同时保护在飞计数与图片通道替换）。</summary>
+    /// <summary>文档通道：默认并发 1，避免多个文档引擎实例互相抢 profile / 抢内存。</summary>
+    private SemaphoreSlim _docLane;
+
+    /// <summary>取消全部队列用的同步锁（同时保护在飞计数与通道替换）。</summary>
     private readonly object _cancelLock = new();
 
     /// <summary>在飞任务计数（含排队中），用于判断“队列是否空闲”。</summary>
@@ -37,9 +43,11 @@ public sealed class ConversionScheduler : IDisposable
 
     /// <summary>按配置创建调度队列。</summary>
     /// <param name="imageConcurrency">图片队列并发度（1~8）</param>
-    public ConversionScheduler(int imageConcurrency)
+    /// <param name="docConcurrency">文档队列并发度（1~4）</param>
+    public ConversionScheduler(int imageConcurrency, int docConcurrency)
     {
         _imageLane = new SemaphoreSlim(Math.Clamp(imageConcurrency, 1, 8));
+        _docLane = new SemaphoreSlim(Math.Clamp(docConcurrency, 1, 4));
     }
 
     /// <summary>在飞任务数（含排队中）。</summary>
@@ -60,6 +68,23 @@ public sealed class ConversionScheduler : IDisposable
             if (_disposed || _inFlight > 0) return false;
             var previous = _imageLane;
             _imageLane = new SemaphoreSlim(Math.Clamp(imageConcurrency, 1, 8));
+            previous.Dispose();
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// 队列空闲时按新并发度重建文档通道（供“重新加载配置”即时生效）。
+    /// </summary>
+    /// <param name="docConcurrency">新的文档队列并发度（1~4）</param>
+    /// <returns>成功返回 true；仍有任务在跑返回 false（下次启动生效）</returns>
+    public bool TryUpdateDocumentConcurrency(int docConcurrency)
+    {
+        lock (_cancelLock)
+        {
+            if (_disposed || _inFlight > 0) return false;
+            var previous = _docLane;
+            _docLane = new SemaphoreSlim(Math.Clamp(docConcurrency, 1, 4));
             previous.Dispose();
             return true;
         }
@@ -95,6 +120,7 @@ public sealed class ConversionScheduler : IDisposable
             {
                 ConversionLane.Fast => _fastLane,
                 ConversionLane.Image => _imageLane,
+                ConversionLane.Document => _docLane,
                 _ => _avLane
             };
             try
@@ -148,5 +174,6 @@ public sealed class ConversionScheduler : IDisposable
         _fastLane.Dispose();
         _imageLane.Dispose();
         _avLane.Dispose();
+        _docLane.Dispose();
     }
 }

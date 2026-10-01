@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    RenamePro 测试替身（test double）：桩 soffice —— 永不随产品发布。
+
+    为什么存在：RenamePro 新增「文档格式转换」，转换由外置 LibreOffice（soffice.exe）完成；
+    开发机 / CI 上没有装 LibreOffice，于是用这个桩进程冒充 LibreOffice 的无头 CLI，
+    用来端到端验证我们的集成层：引擎探测、命令行拼装、产物命名对账、产物格式校验、
+    超时与进程树杀灭。桩只模仿「可观测契约」（version 输出、convert-to/outdir 参数、
+    产物命名规则、退出码与 stderr），不实现真的 Office 过滤链。
+
+    构建方式：
+      dotnet build                     日常编译；输出 bin\<cfg>\net8.0\stub-engine.exe（多文件）
+      pwsh -File build-stub.ps1        单文件发布 + 复制成 dist\soffice.exe / dist\soffice.com
+
+    注意：只有单文件发布（PublishSingleFile）的产物才能改名为 soffice.exe。
+    普通 dotnet build 出来的 stub-engine.exe 依赖同目录的 stub-engine.dll，
+    单独改名拷贝成 soffice.exe 会以「找不到 soffice.dll」失败，请用 build-stub.ps1。
+
+    离线可构建：只用框架自带的 System.IO.Compression / System.Security.Cryptography，
+    没有任何 PackageReference，因此不需要访问 nuget.org。
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>stub-engine</AssemblyName>
+    <RootNamespace>RenamePro.TestStubEngine</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <!-- 测试夹具要能在只装了更高版本运行时的机器上跑起来（本机 .NET 8 与 10 并存） -->
+    <RollForward>LatestMajor</RollForward>
+    <!-- 桩只输出 ASCII/中文，不做区域敏感格式化：关掉全球化以去掉 ICU 依赖 -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- pdb 内嵌，不再生成附属文件：单文件发布后发布目录里只有一个 exe -->
+    <DebugType>embedded</DebugType>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- 无第三方包可审计；关掉它免得离线构建时冒出 NU1900「无法加载 nuget.org 服务索引」 -->
+    <NuGetAudit>false</NuGetAudit>
+    <!-- 测试替身，不参与产品版本对齐 -->
+    <Version>0.0.0-stub</Version>
+    <Product>RenamePro stub engine (test fixture)</Product>
+    <Description>冒充 LibreOffice 无头 CLI 的测试替身，仅用于集成测试</Description>
+  </PropertyGroup>
+
+</Project>
