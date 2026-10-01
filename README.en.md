@@ -14,7 +14,7 @@ Changing a file extension on Windows does not change the file contents, so you o
 2. Converts the file contents into the new format, writes the result to a temporary file in the same folder and atomically replaces the renamed file;
 3. Reports progress through the same system progress dialog that File Explorer uses, and the operation can be cancelled.
 
-### What's new in v1.2.0
+### What's new in v2.0.0
 
 - **Document conversion**: renaming `report.docx` to `report.pdf`, `slides.pptx` to `slides.pdf` or `notes.md` to `notes.docx` now performs the real conversion (Office / ODF / Markdown / HTML / CSV ↔ PDF, plus same-family conversions) through a headless LibreOffice or Office COM, with magic-number verification, cross-family refusal, timeouts and stepwise degradation;
 - **Three release packages**: the image and audio/video builds stay single-file exes; the new **all-in-one build** is `RenamePro.exe` plus a `LibreOffice\` folder, so document conversion works out of the box with no first-run extraction;
@@ -118,14 +118,14 @@ Design constraints: `PublishTrim` is never used (it breaks COM interop and refle
 
 ### Release size breakdown (measured)
 
-`RenamePro.csproj` strips WPF, designer and debug-symbol assemblies at publish time and `EnableCompressionInSingleFile` deflates the bundle contents; FFmpeg is a trimmed build compiled by this project and **embedded into the executable** (see below); since v1.2 the document engine travels as a **bundled directory** instead (see below).
+`RenamePro.csproj` strips WPF, designer and debug-symbol assemblies at publish time and `EnableCompressionInSingleFile` deflates the bundle contents; FFmpeg is a trimmed build compiled by this project and **embedded into the executable** (see below); since v2.0 the document engine travels as a **bundled directory** instead (see below).
 
 | Artifact | Size | Notes |
 | --- | --- | --- |
 | `RenamePro.exe` (image / audio-video / all-in-one share one build) | 69.8 / 83.2 / 83.2 MB | the 83.2 MB one carries a 13.4 MB embedded FFmpeg payload; the runtime, WinForms and the native Magick.NET libraries all live inside |
-| `RenamePro-图片版-v1.2.0.zip` (image) | 64.0 MB | **contains only `RenamePro.exe` + the readme**, image conversion only |
-| `RenamePro-音视频版-v1.2.0.zip` (audio/video) | 77.4 MB | also just two files, images + audio/video (the embedded FFmpeg is extracted once) |
-| `RenamePro-全功能版-v1.2.0.zip` (all-in-one) | 328.7 MB | **a folder package**: `RenamePro.exe` + `LibreOffice\` + readme, 4549 files / 787 MB inside; about 790 MB unpacked |
+| `RenamePro-image-v2.0.0.zip` (image) | 64.0 MB | **contains only `RenamePro.exe` + the readme**, image conversion only |
+| `RenamePro-av-v2.0.0.zip` (audio/video) | 77.4 MB | also just two files, images + audio/video (the embedded FFmpeg is extracted once) |
+| `RenamePro-full-v2.0.0.zip` (all-in-one) | 328.7 MB | **a folder package**: `RenamePro.exe` + `LibreOffice\` + readme, 4549 files / 787 MB inside; about 790 MB unpacked |
 | `ffmpeg\` folder (local build input) | 34.4 MB | 2 executables + 10 runtime DLLs; it was the official essentials build before (201 MB for the two executables) |
 | `libreoffice\` folder (local build input, becomes `LibreOffice\` in the package) | 703 MB | official LibreOffice 25.8.7 trimmed to 4547 files / 4546 manifest entries; the raw install tree is 1502 MB / 19673 files |
 | Repository sources and icon | about 350 KB | binaries, DLLs, engine and packaging output are never committed |
@@ -157,11 +157,11 @@ Measured behaviour:
 
 > The three builds must come from **separate publishes**: the FFmpeg payload is embedded at compile time, so one publish can never be both. `publish.ps1 -Mode All` already does this in order (image build first, then the payload-carrying audio/video and all-in-one builds).
 
-### Why the document engine is a directory, not an embedded payload (the v1.2 trade-off)
+### Why the document engine is a directory, not an embedded payload (the v2.0 trade-off)
 
-An earlier design also compressed the trimmed LibreOffice into a payload, embedded it into the executable at compile time and extracted it to `%LOCALAPPDATA%\RenamePro\runtime\doc-<payload-id>\` on the first document conversion. The measured costs outweighed the benefits, so v1.2 ships it as a directory next to the exe:
+An earlier design also compressed the trimmed LibreOffice into a payload, embedded it into the executable at compile time and extracted it to `%LOCALAPPDATA%\RenamePro\runtime\doc-<payload-id>\` on the first document conversion. The measured costs outweighed the benefits, so v2.0 ships it as a directory next to the exe:
 
-| | Embedded payload (v1.1) | Bundled directory (v1.2) |
+| | Embedded payload (v1.1) | Bundled directory (v2.0) |
 | --- | --- | --- |
 | All-in-one executable | 338.8 MB | 83.1 MB |
 | First document conversion | extracts 722 MB into `%LOCALAPPDATA%` first (tens of seconds, and another copy on the system drive) | the directory is already there - **no extraction step at all** |
@@ -265,9 +265,9 @@ RenamePro/
 ### Option 1: Use a release package (recommended)
 
 1. Download from the Releases page (three builds):
-   - `RenamePro-图片版-*.zip` (image): smallest, about 64 MB, image conversion only; audio/video and document renames are skipped with a log entry;
-   - `RenamePro-音视频版-*.zip` (audio/video): images plus audio/video, FFmpeg embedded, about 78 MB;
-   - `RenamePro-全功能版-*.zip` (all-in-one): adds document conversion; **a folder package** (`RenamePro.exe` + `LibreOffice\`), about 330 MB;
+   - `RenamePro-image-*.zip` (image): smallest, about 64 MB, image conversion only; audio/video and document renames are skipped with a log entry;
+   - `RenamePro-av-*.zip` (audio/video): images plus audio/video, FFmpeg embedded, about 78 MB;
+   - `RenamePro-full-*.zip` (all-in-one): adds document conversion; **a folder package** (`RenamePro.exe` + `LibreOffice\`), about 330 MB;
 2. Unzip anywhere: the image and audio/video builds contain **a single `RenamePro.exe`** (plus the readme), the all-in-one build contains `RenamePro.exe` + `LibreOffice\` + the readme. Double-click the exe and only a tray icon appears;
 3. Rename files in File Explorer as usual, for example `photo.jpg` to `photo.png`;
 4. Tray icon context menu: pause/resume watching, autostart at logon, reload configuration, document engine status, exit.
@@ -294,7 +294,7 @@ powershell -ExecutionPolicy Bypass -File build-docengine.ps1 -ReuseStage
 
 ```powershell
 # Build all three ZIPs (output goes to dist\ by default)
-powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode All -Version 1.2.0
+powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode All -Version 2.0.0
 # Build a single package
 powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode Image   # image
 powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode Av      # audio/video
@@ -404,7 +404,7 @@ The project was built in five milestones, each with its own commit and hands-on 
 | 2 | Backup manager, tiered scheduler (fast 2 / image 2 / audio-video 1), Magick.NET image converter and FFmpeg audio/video converter, pipeline integration |
 | 3 | Dedicated STA message thread, `IOperationsProgressDialog` wrapper, aggregated progress and cancellation, Shell COM degradation with Toast fallback |
 | 4 | `config.json` configuration, failure rollback, resource control (lazy Magick loading and memory cap), hardening, portable packaging script |
-| 5 | Document conversion: headless LibreOffice / Office COM routes, conversion matrix with magic verification, built-in Markdown → docx, `--selftest` and `--docdiagnose` troubleshooting entries; v1.2 moved the engine from an embedded payload to a bundled `LibreOffice\` folder and split the release into the image / audio-video / all-in-one packages |
+| 5 | Document conversion: headless LibreOffice / Office COM routes, conversion matrix with magic verification, built-in Markdown → docx, `--selftest` and `--docdiagnose` troubleshooting entries; v2.0 moved the engine from an embedded payload to a bundled `LibreOffice\` folder and split the release into the image / av / full packages |
 
 ## 11. Known Limitations
 

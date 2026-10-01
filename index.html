@@ -862,7 +862,7 @@ html[data-reduced-motion] :is(.button, .button svg) { transform: none !important
         <div class="guide-body">
           <ol class="guide-steps">
             <li><strong><span lang="en">Pick a package.</span><span lang="zh-CN">选一个包。</span></strong>
-              <p><span lang="en">Three packages on the Releases page: <code>RenamePro-图片版-*.zip</code> (single exe, images only, smallest), <code>RenamePro-音视频版-*.zip</code> (single exe, images + audio/video, FFmpeg inside) and <code>RenamePro-全功能版-*.zip</code> (folder with <code>LibreOffice\</code>, adds Office / ODF / PDF / Markdown conversion).</span><span lang="zh-CN">Releases 页有三个包：<code>RenamePro-图片版-*.zip</code>（单 exe，仅图片，最小）、<code>RenamePro-音视频版-*.zip</code>（单 exe，图片 + 音视频，内置 FFmpeg）、<code>RenamePro-全功能版-*.zip</code>（含 <code>LibreOffice\</code> 的目录包，额外支持 Office / ODF / PDF / Markdown 互转）。</span></p>
+              <p><span lang="en">Three packages on the Releases page: <code>RenamePro-image-*.zip</code> (single exe, images only, smallest), <code>RenamePro-av-*.zip</code> (single exe, images + audio/video, FFmpeg inside) and <code>RenamePro-full-*.zip</code> (folder with <code>LibreOffice\</code>, adds Office / ODF / PDF / Markdown conversion).</span><span lang="zh-CN">Releases 页有三个包：<code>RenamePro-image-*.zip</code>（单 exe，仅图片，最小）、<code>RenamePro-av-*.zip</code>（单 exe，图片 + 音视频，内置 FFmpeg）、<code>RenamePro-full-*.zip</code>（含 <code>LibreOffice\</code> 的目录包，额外支持 Office / ODF / PDF / Markdown 互转）。</span></p>
             </li>
             <li><strong><span lang="en">Extract and run.</span><span lang="zh-CN">解压后运行。</span></strong>
               <p><span lang="en">Keep the folder layout intact and double-click <code>RenamePro.exe</code>. No installer, no window — a tray icon appears. In the all-in-one build the exe only finds the document engine as long as it stays next to <code>LibreOffice\</code>.</span><span lang="zh-CN">保持目录结构完整，双击 <code>RenamePro.exe</code>。免安装、无窗口，通知区出现托盘图标。全功能版里 exe 必须和同级 <code>LibreOffice\</code> 待在一起才能做文档转换。</span></p>
@@ -1001,7 +1001,7 @@ html[data-reduced-motion] :is(.button, .button svg) { transform: none !important
         <div class="download-card reveal">
           <div class="feature-mark"><svg aria-hidden="true"><use href="#i-image"/></svg></div>
           <h3><span lang="en">Image build</span><span lang="zh-CN">图片版</span></h3>
-          <p><span lang="en">Smallest download (≈64 MB). A single exe, image conversion only; audio/video and document renames are logged and skipped. Package: <code>RenamePro-图片版-v1.2.0.zip</code></span><span lang="zh-CN">体积最小（约 64 MB），只有一个 exe：仅图片转换，音视频与文档改名只记日志跳过。包名：<code>RenamePro-图片版-v1.2.0.zip</code></span></p>
+          <p><span lang="en">Smallest download (≈64 MB). A single exe, image conversion only; audio/video and document renames are logged and skipped. Package: <code>RenamePro-image-v2.0.0.zip</code></span><span lang="zh-CN">体积最小（约 64 MB），只有一个 exe：仅图片转换，音视频与文档改名只记日志跳过。包名：<code>RenamePro-image-v2.0.0.zip</code></span></p>
           <a class="button primary download-button" href="https://github.com/Ha2eS1onn/RenamePro/releases/latest">
             <svg aria-hidden="true"><use href="#i-download"/></svg>
             <span lang="en">Download from GitHub</span><span lang="zh-CN">GitHub 下载</span>
@@ -1012,7 +1012,7 @@ html[data-reduced-motion] :is(.button, .button svg) { transform: none !important
         <div class="download-card reveal">
           <div class="feature-mark"><svg aria-hidden="true"><use href="#i-film"/></svg></div>
           <h3><span lang="en">Audio / video build</span><span lang="zh-CN">音视频版</span></h3>
-          <p><span lang="en">A single exe (≈78 MB) with a trimmed FFmpeg inside; images and audio/video. The bundled FFmpeg unpacks once (about 150 ms) on the first audio/video conversion. Package: <code>RenamePro-音视频版-v1.2.0.zip</code></span><span lang="zh-CN">一个 exe（约 78 MB），内置精简 FFmpeg：图片 + 音视频。首次做音视频转换时把它解压一次（约 150 ms）。包名：<code>RenamePro-音视频版-v1.2.0.zip</code></span></p>
+          <p><span lang="en">A single exe (≈78 MB) with a trimmed FFmpeg inside; images and audio/video. The bundled FFmpeg unpacks once (about 150 ms) on the first audio/video conversion. Package: <code>RenamePro-av-v2.0.0.zip</code></span><span lang="zh-CN">一个 exe（约 78 MB），内置精简 FFmpeg：图片 + 音视频。首次做音视频转换时把它解压一次（约 150 ms）。包名：<code>RenamePro-av-v2.0.0.zip</code></span></p>
           <a class="button primary download-button" href="https://github.com/Ha2eS1onn/RenamePro/releases/latest">
             <svg aria-hidden="true"><use href="#i-download"/></svg>
             <span lang="en">Download from GitHub</span><span lang="zh-CN">GitHub 下载</span>
@@ -1023,7 +1023,7 @@ html[data-reduced-motion] :is(.button, .button svg) { transform: none !important
         <div class="download-card reveal">
           <div class="feature-mark"><svg aria-hidden="true"><use href="#i-copy"/></svg></div>
           <h3><span lang="en">All-in-one build</span><span lang="zh-CN">全功能版</span></h3>
-          <p><span lang="en">A folder package (≈330 MB download, ≈790 MB unpacked): <code>RenamePro.exe</code> plus a <code>LibreOffice\</code> engine folder for document conversion. No install, no first-run unpacking — just keep the folder together. Package: <code>RenamePro-全功能版-v1.2.0.zip</code></span><span lang="zh-CN">目录包（下载约 330 MB，解压后约 790 MB）：<code>RenamePro.exe</code> + 文档转换引擎目录 <code>LibreOffice\</code>。免安装、无首次解压，只要整个目录一起用就行。包名：<code>RenamePro-全功能版-v1.2.0.zip</code></span></p>
+          <p><span lang="en">A folder package (≈330 MB download, ≈790 MB unpacked): <code>RenamePro.exe</code> plus a <code>LibreOffice\</code> engine folder for document conversion. No install, no first-run unpacking — just keep the folder together. Package: <code>RenamePro-full-v2.0.0.zip</code></span><span lang="zh-CN">目录包（下载约 330 MB，解压后约 790 MB）：<code>RenamePro.exe</code> + 文档转换引擎目录 <code>LibreOffice\</code>。免安装、无首次解压，只要整个目录一起用就行。包名：<code>RenamePro-full-v2.0.0.zip</code></span></p>
           <a class="button primary download-button" href="https://github.com/Ha2eS1onn/RenamePro/releases/latest">
             <svg aria-hidden="true"><use href="#i-download"/></svg>
             <span lang="en">Download from GitHub</span><span lang="zh-CN">GitHub 下载</span>

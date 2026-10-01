@@ -12,9 +12,9 @@
     <Platforms>x64</Platforms>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <!-- 版本号：与发布 tag 保持一致（右键 exe 属性里显示的版本）；publish.ps1 会用 -p:Version 覆盖 -->
-    <Version>1.2.0</Version>
-    <AssemblyVersion>1.2.0.0</AssemblyVersion>
-    <FileVersion>1.2.0.0</FileVersion>
+    <Version>2.0.0</Version>
+    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <FileVersion>2.0.0.0</FileVersion>
     <Product>RenamePro</Product>
     <Description>Windows 托盘工具：在资源管理器里改文件后缀，后台自动把内容真正转换成新格式</Description>
     <Copyright>Copyright (C) 2026 Ha2eS1onn</Copyright>
@@ -25,7 +25,7 @@
     <!-- 载荷闸门：FFmpeg 载荷是编译期嵌入的，由 publish.ps1 按版本注入
          （-p:EmbedFfmpegPayload=true|false）：图片版=false，音视频版/全功能版=true。
          默认值取 true 与开发期一致，这样 `dotnet build` 的行为和历史版本完全相同。
-         文档引擎（LibreOffice）自 1.2 起**不再嵌入 exe**，改为随包目录 LibreOffice\，
+         文档引擎（LibreOffice）自 2.0 起**不再嵌入 exe**，改为随包目录 LibreOffice\，
          由 DocumentEngine 在程序目录里直接发现（见 build-docengine.ps1 与 publish.ps1 -Mode Docs）。 -->
     <EmbedFfmpegPayload Condition="'$(EmbedFfmpegPayload)' == ''">true</EmbedFfmpegPayload>
   </PropertyGroup>

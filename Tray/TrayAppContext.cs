@@ -87,7 +87,7 @@ public sealed class TrayAppContext : ApplicationContext
         reloadMenuItem.Click += (_, _) => ReloadConfig();
 
         // 文档引擎只做只读状态展示（排障第一现场：引擎到底找没找到、为什么不可用）。
-        // 1.2 起文档引擎是随包目录 LibreOffice\，没有"首次解压"这件事，因此不再需要解压入口。
+        // 2.0 起文档引擎是随包目录 LibreOffice\，没有"首次解压"这件事，因此不再需要解压入口。
         _engineStatusMenuItem = new ToolStripMenuItem("文档引擎：未探测") { Enabled = false };
 
         var exitMenuItem = new ToolStripMenuItem("退出");

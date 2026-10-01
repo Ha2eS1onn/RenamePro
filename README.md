@@ -14,7 +14,7 @@ Windows 只改文件后缀并不会改变文件内容，改完常常得到一个
 2. 再把文件内容转换为新格式，写入同目录临时文件后原子替换；
 3. 转换过程通过系统资源管理器同款的进度对话框展示，可取消。
 
-### v1.2.0 更新摘要
+### v2.0.0 更新摘要
 
 - **新增文档转换**：把 `report.docx` 改成 `report.pdf`、`slides.pptx` 改成 `slides.pdf`、`notes.md` 改成 `notes.docx` 都会真正转换（Office / ODF / Markdown / HTML / CSV ↔ PDF、同族互转），由无头 LibreOffice 或 Office COM 执行，带 magic 校验、跨族拒绝、超时与逐级降级；
 - **发布形态改为三个包**：图片版、音视频版仍是单文件 exe；新增**全功能版**＝`RenamePro.exe` + `LibreOffice\` 目录包，文档转换开箱即用、且没有"首次解压几百 MB"这一步；
@@ -118,14 +118,14 @@ Windows 只改文件后缀并不会改变文件内容，改完常常得到一个
 
 ### 发布体积构成（实测）
 
-`RenamePro.csproj` 在发布期剔除 WPF / 设计器 / 调试符号程序集，`EnableCompressionInSingleFile` 对单文件包内做 deflate；FFmpeg 为项目自行精简编译并**内置进 exe**（见下）；文档引擎自 v1.2 起改为**随包目录**（见下）。
+`RenamePro.csproj` 在发布期剔除 WPF / 设计器 / 调试符号程序集，`EnableCompressionInSingleFile` 对单文件包内做 deflate；FFmpeg 为项目自行精简编译并**内置进 exe**（见下）；文档引擎自 v2.0 起改为**随包目录**（见下）。
 
 | 产物 | 体积 | 说明 |
 | --- | --- | --- |
 | `RenamePro.exe`（图片版 / 音视频版 / 全功能版共用同一份构建） | 69.8 / 83.2 / 83.2 MB | 83.2 MB 的那份含 13.4 MB 内置 FFmpeg 载荷；运行时、WinForms、Magick.NET 原生库全在其中 |
-| `RenamePro-图片版-v1.2.0.zip` | 64.0 MB | **包内只有 `RenamePro.exe` + 使用说明**，仅图片转换 |
-| `RenamePro-音视频版-v1.2.0.zip` | 77.4 MB | 同样两个文件，图片 + 音视频（首次音视频转换解压一次内置 FFmpeg） |
-| `RenamePro-全功能版-v1.2.0.zip` | 328.7 MB | **目录包**：`RenamePro.exe` + `LibreOffice\` + 使用说明，包内 4549 个文件 / 787 MB；解压后约 790 MB |
+| `RenamePro-image-v2.0.0.zip` | 64.0 MB | **包内只有 `RenamePro.exe` + 使用说明**，仅图片转换 |
+| `RenamePro-av-v2.0.0.zip` | 77.4 MB | 同样两个文件，图片 + 音视频（首次音视频转换解压一次内置 FFmpeg） |
+| `RenamePro-full-v2.0.0.zip` | 328.7 MB | **目录包**：`RenamePro.exe` + `LibreOffice\` + 使用说明，包内 4549 个文件 / 787 MB；解压后约 790 MB |
 | `ffmpeg\` 目录（本地构建源） | 34.4 MB | 2 个 exe + 10 个运行时 DLL；精简编译前是官方 essentials 构建，两个 exe 合计 201 MB |
 | `libreoffice\` 目录（本地构建源，即包内 `LibreOffice\`） | 703 MB | 官方 LibreOffice 25.8.7 裁剪后 4547 个文件 / 4546 条清单；原始安装树 1502 MB / 19673 个文件 |
 | 仓库源码 + 图标 | 约 350 KB | 二进制、DLL、引擎与打包产物均不入库 |
@@ -157,11 +157,11 @@ Windows 只改文件后缀并不会改变文件内容，改完常常得到一个
 
 > 三个版本必须分**多次独立发布**：FFmpeg 载荷在编译期嵌入，同一次发布的产物不可能既带又不带它。`publish.ps1 -Mode All` 已按这个顺序做（先出图片版，再出带载荷的音视频版与全功能版）。
 
-### 文档引擎为什么是"目录"而不是"内置载荷"（v1.2 的取舍）
+### 文档引擎为什么是"目录"而不是"内置载荷"（v2.0 的取舍）
 
-早期设计把裁剪后的 LibreOffice 也压成 zip、编译期嵌进 exe，首次文档转换时解压到 `%LOCALAPPDATA%\RenamePro\runtime\doc-<载荷ID>\`。实测下来这个方案的代价明显大于收益，因此 v1.2 改成随包目录：
+早期设计把裁剪后的 LibreOffice 也压成 zip、编译期嵌进 exe，首次文档转换时解压到 `%LOCALAPPDATA%\RenamePro\runtime\doc-<载荷ID>\`。实测下来这个方案的代价明显大于收益，因此 v2.0 改成随包目录：
 
-| | 内置载荷（v1.1） | 随包目录（v1.2） |
+| | 内置载荷（v1.1） | 随包目录（v2.0） |
 | --- | --- | --- |
 | 全功能版 exe | 338.8 MB | 83.1 MB |
 | 首次文档转换 | 先把 722 MB 解压到 `%LOCALAPPDATA%`（几十秒，且 C 盘要再占一份） | 直接就是现成目录，**没有解压这一步** |
@@ -262,9 +262,9 @@ RenamePro/
 ### 方式一：使用发布包（推荐）
 
 1. 到 Releases 页面下载（三个版本）：
-   - `RenamePro-图片版-*.zip`：体积最小（约 64 MB），仅图片转换，音视频与文档改名会写日志跳过；
-   - `RenamePro-音视频版-*.zip`：图片 + 音视频，内置 FFmpeg（约 78 MB）；
-   - `RenamePro-全功能版-*.zip`：再加文档转换，**目录包**（`RenamePro.exe` + `LibreOffice\`，下载约 330 MB）；
+   - `RenamePro-image-*.zip`：体积最小（约 64 MB），仅图片转换，音视频与文档改名会写日志跳过；
+   - `RenamePro-av-*.zip`：图片 + 音视频，内置 FFmpeg（约 78 MB）；
+   - `RenamePro-full-*.zip`：再加文档转换，**目录包**（`RenamePro.exe` + `LibreOffice\`，下载约 330 MB）；
 2. 解压任意目录：图片版与音视频版**里面只有一个 `RenamePro.exe`**（外加使用说明）；全功能版是
    `RenamePro.exe` + `LibreOffice\` + 使用说明。双击 exe 即可——无窗口，托盘出现图标；
 3. 在资源管理器里改文件后缀即可，例如 `photo.jpg` 改为 `photo.png`；
@@ -292,7 +292,7 @@ powershell -ExecutionPolicy Bypass -File build-docengine.ps1 -ReuseStage
 
 ```powershell
 # 生成三个版本的 zip（默认输出到 dist\）
-powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode All -Version 1.2.0
+powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode All -Version 2.0.0
 # 只出某一个包
 powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode Image   # 图片版
 powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode Av      # 音视频版
@@ -380,7 +380,7 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode Docs    # 全功能�
 [2026-09-25 23:25:26.423] [ERROR] [结果] FAILED | 旧: D:\demo\bad.jpg | 新: D:\demo\bad.png | 副本: D:\demo\bad - 副本.jpg | 错误: insufficient image data in file ...
 [2026-09-25 23:25:26.427] [INFO] [回滚] 已恢复原名：D:\demo\bad.jpg（副本已移回，不会再被二次转换）
 [2026-09-25 23:26:12.347] [WARN] [重试] 原子替换 第 2 次失败（文件被占用），500ms 后重试（最多 3 次）
-[2026-09-25 23:31:02.114] [INFO] [文档] 引擎就绪：LibreOffice 25.8.7.3 30742500（D:\demo\RenamePro-全功能版\LibreOffice\program\soffice.com，随包目录）
+[2026-09-25 23:31:02.114] [INFO] [文档] 引擎就绪：LibreOffice 25.8.7.3 30742500（D:\demo\RenamePro-full\LibreOffice\program\soffice.com，随包目录）
 [2026-09-25 23:31:02.118] [INFO] [文档] 预热完成（1180 ms，首次会创建 LibreOffice 用户配置目录）
 [2026-09-25 23:31:05.482] [INFO] [结果] OK | 旧: D:\demo\report.docx | 新: D:\demo\report.pdf | 副本: D:\demo\report - 副本.docx | 耗时: 3.1s
 [2026-09-25 23:31:06.117] [INFO] [结果] SKIPPED | 旧: D:\demo\fake.docx | 新: D:\demo\fake.pdf | 原因: magic 不符：内容实为 png，源扩展名 .docx
@@ -402,7 +402,7 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -Mode Docs    # 全功能�
 | 2 | 备份管理器、分级调度队列（快速 2 / 图片 2 / 音视频 1）、Magick.NET 图片与 FFmpeg 音视频转换器、主流程串联 |
 | 3 | 专用 STA 消息线程、`IOperationsProgressDialog` 封装、进度聚合与取消、Shell COM 失败降级与 Toast |
 | 4 | `config.json` 配置化、失败回滚、资源控制（Magick 延迟加载与内存上限）、边界加固、便携打包脚本 |
-| 5 | 文档转换：无头 LibreOffice / Office COM 路由、转换矩阵与 magic 校验、内置 Markdown → docx、`--selftest` 与 `--docdiagnose` 排障入口；v1.2 把文档引擎从"内置载荷"改为随包 `LibreOffice\` 目录，发布拆成图片版 / 音视频版 / 全功能版三个包 |
+| 5 | 文档转换：无头 LibreOffice / Office COM 路由、转换矩阵与 magic 校验、内置 Markdown → docx、`--selftest` 与 `--docdiagnose` 排障入口；v2.0 把文档引擎从"内置载荷"改为随包 `LibreOffice\` 目录，发布拆成 image / av / full 三个包 |
 
 ## 十一、已知限制
 

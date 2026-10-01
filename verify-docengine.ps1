@@ -3,7 +3,7 @@
 # 用法（三选一）：
 #   powershell -ExecutionPolicy Bypass -File verify-docengine.ps1 -Soffice 'D:\RenamePro-dev\libreoffice\program\soffice.com'
 #   powershell -ExecutionPolicy Bypass -File verify-docengine.ps1 -EngineDir .\libreoffice      # 验随包引擎目录（裁剪树）
-#   powershell -ExecutionPolicy Bypass -File verify-docengine.ps1 -Package dist\RenamePro-全功能版-v1.2.0.zip
+#   powershell -ExecutionPolicy Bypass -File verify-docengine.ps1 -Package dist\RenamePro-full-v2.0.0.zip
 #       —— 解压发布包，用里面的 RenamePro.exe + 同级 LibreOffice\ 跑完整矩阵（最强的一种，验的正是用户拿到的形态）
 #
 # 做法：生成**真实**夹具（python-docx / python-pptx / openpyxl，含中文、表格、图片、多页、公式）
@@ -281,7 +281,7 @@ if (-not $engineReady) {
 Assert-True ("引擎来源是「{0}」" -f $expectOrigin) ((Get-LogText) -match [regex]::Escape($expectOrigin)) `
     (("引擎就绪行：" + (Get-LogText -split "`r?`n" | Where-Object { $_ -match '引擎就绪' } | Select-Object -Last 1)))
 
-# 随包目录版不应再出现"解压文档引擎载荷"的痕迹（1.2 起引擎就是普通目录）
+# 随包目录版不应再出现"解压文档引擎载荷"的痕迹（2.0 起引擎就是普通目录）
 if ($Package -or $EngineDir) {
     $runtimeDir = Join-Path $env:RENAMEPRO_DOCROOT 'runtime'
     $payloadDirs = @(Get-ChildItem $runtimeDir -Directory -Filter 'doc-*' -ErrorAction SilentlyContinue)

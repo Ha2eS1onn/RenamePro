@@ -1,7 +1,7 @@
 ﻿# RenamePro 便携打包脚本：图片版 / 音视频版（单文件 exe）+ 全功能版（目录包，含 LibreOffice\）
-# 用法：powershell -ExecutionPolicy Bypass -File publish.ps1 [-Mode Image|Av|Docs|All] [-Version 1.2.0] [-SkipEngineBuild]
+# 用法：powershell -ExecutionPolicy Bypass -File publish.ps1 [-Mode Image|Av|Docs|All] [-Version 2.0.0] [-SkipEngineBuild]
 #
-# 三个版本的包内结构（v1.2 起）：
+# 三个版本的包内结构（v2.0 起）：
 #   图片版   Image：RenamePro.exe + 使用说明.txt（不嵌入任何载荷 → 只做图片转换）
 #   音视频版 Av   ：RenamePro.exe + 使用说明.txt（exe 内含 FFmpeg 载荷，首次音视频转换解压到
 #                   %LOCALAPPDATA%\RenamePro\runtime\，约 150 ms，只此一次）
@@ -20,7 +20,7 @@
 param(
     [ValidateSet('Image', 'Av', 'Docs', 'All', 'Full', 'Doc', 'Both')]
     [string]$Mode = 'All',
-    [string]$Version = '1.2.0',
+    [string]$Version = '2.0.0',
     # 引擎树已就绪时跳过构建检查（仓库里已有 libreoffice\program\soffice.com 时最省事）
     [switch]$SkipEngineBuild
 )
@@ -362,7 +362,7 @@ try {
         # 图片版：不嵌入 FFmpeg 载荷
         $exe = Publish-SingleFileExe -EmbedFfmpeg $false
         Write-Host ("单文件 exe 生成：{0:N1} MB（不含任何载荷）" -f ((Get-Item $exe).Length / 1MB))
-        New-PortablePackage -ExePath $exe -PackageName 'RenamePro-图片版' -Readme $readmeImage
+        New-PortablePackage -ExePath $exe -PackageName 'RenamePro-image' -Readme $readmeImage
     }
 
     if ($wantAv) {
@@ -371,7 +371,7 @@ try {
         $exe = Publish-SingleFileExe -EmbedFfmpeg $true
         $payloadMb = [math]::Round((Get-Item $payloadPath).Length / 1MB, 1)
         Write-Host ("单文件 exe 生成：{0:N1} MB（含 {1} MB 内置 FFmpeg 载荷）" -f ((Get-Item $exe).Length / 1MB), $payloadMb)
-        New-PortablePackage -ExePath $exe -PackageName 'RenamePro-音视频版' -Readme $readmeAv
+        New-PortablePackage -ExePath $exe -PackageName 'RenamePro-av' -Readme $readmeAv
     }
 
     if ($wantDocs) {
@@ -393,7 +393,7 @@ try {
         }
         $exe = Publish-SingleFileExe -EmbedFfmpeg $true
         Write-Host ("单文件 exe 生成：{0:N1} MB（含内置 FFmpeg 载荷）" -f ((Get-Item $exe).Length / 1MB))
-        New-DocsPackage -ExePath $exe -EngineDir $engineDir -PackageName 'RenamePro-全功能版' -Readme $readmeDocs
+        New-DocsPackage -ExePath $exe -EngineDir $engineDir -PackageName 'RenamePro-full' -Readme $readmeDocs
     }
 
     # 汇总

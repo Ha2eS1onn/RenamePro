@@ -4,7 +4,7 @@
 # 做什么：把 setup-lo-dev.ps1 / msiexec 展开出来的 LibreOffice 目录树裁剪成"够用且不臃肿"的子树，
 #         剔除安装数据库类文件，生成清单 payload.json，再整树复制到随包目录 libreoffice\。
 #
-# 为什么不再压成"载荷"：自 1.2 起文档引擎不再嵌入 exe，而是以 <程序目录>\LibreOffice\ 目录随发布包分发
+# 为什么不再压成"载荷"：自 2.0 起文档引擎不再嵌入 exe，而是以 <程序目录>\LibreOffice\ 目录随发布包分发
 #         （打包见 publish.ps1 -Mode Docs，运行时发现见 Conversion\DocumentEngine.cs）。
 #         原先"压成 zip 再编译期嵌进 exe"会让单文件 exe 涨到 330+ MB，并且首次转换还要把 700 MB
 #         解压到 %LOCALAPPDATA%——目录版没有这两个代价。
